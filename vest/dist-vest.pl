@@ -434,14 +434,18 @@ while (1){
 		# sort returns failure even when it doesn't fail for some reason
 		my $best=unchecked_output("$cmd"); chomp $best;
 		print STDERR "$best\n";
+		# oa is a space-delimited origin, axis pair
+		# x is the weight update along the best direction
 		my ($oa, $x, $xscore) = split /\|/, $best;
 		$score = $xscore;
+                my $psd = $score - $last_score;
 		print STDERR "PROJECTED SCORE: $score\n";
+		print STDERR "PROJECTED IMPROVEMENT: $psd\n";
+		print STDERR "PROPOSED UPDATE: $x along origin+axis: $oa\n";
 		if (abs($x) < $epsilon) {
-			print STDERR "\nOPTIMIZER: no score improvement: abs($x) < $epsilon\n";
+			print STDERR "\nOPTIMIZER: no significant weight change: abs($x) < $epsilon\n";
 			last;
 		}
-                my $psd = $score - $last_score;
                 $last_score = $score;
 		if (abs($psd) < $epsilon) {
 			print STDERR "\nOPTIMIZER: no score improvement: abs($psd) < $epsilon\n";

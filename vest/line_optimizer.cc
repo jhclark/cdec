@@ -20,9 +20,13 @@ struct IntervalComp {
 double LineOptimizer::LineOptimize(
     const vector<ErrorSurface>& surfaces,
     const LineOptimizer::ScoreType type,
+    Score** best_score_stats,
     float* best_score,
-    const double epsilon) {
+    const double epsilon,
+    const ScoreP outside_stats /*=NULL*/) {
+
   // cerr << "MIN=" << MINIMIZE_SCORE << " MAX=" << MAXIMIZE_SCORE << "  MINE=" << type << endl;
+  // concatenate error surfaces
   vector<ErrorIter> all_ints;
   for (vector<ErrorSurface>::const_iterator i = surfaces.begin();
        i != surfaces.end(); ++i) {
@@ -30,15 +34,25 @@ double LineOptimizer::LineOptimize(
     for (ErrorIter j = surface.begin(); j != surface.end(); ++j)
       all_ints.push_back(j);
   }
+  
+  // sort by point on (weight) line where each ErrorSegment induces a change in the error rate
   sort(all_ints.begin(), all_ints.end(), IntervalComp());
   double last_boundary = all_ints.front()->x;
   ScoreP accp = all_ints.front()->delta->GetZero();
   Score *acc=accp.get();
+
+  // if user provided some "outside" sufficient stats for a portion of the tuning set that
+  // we are not currently optimizing, apply that
+  if(outside_stats != NULL) {
+    acc->PlusEquals(outside_stats);
+  }
+
   float& cur_best_score = *best_score;
   cur_best_score = (type == MAXIMIZE_SCORE ?
     -numeric_limits<float>::max() : numeric_limits<float>::max());
   bool left_edge = true;
   double pos = numeric_limits<double>::quiet_NaN();
+
   for (vector<ErrorIter>::iterator i = all_ints.begin();
        i != all_ints.end(); ++i) {
     const ErrorSegment& seg = **i;
@@ -48,6 +62,7 @@ double LineOptimizer::LineOptimize(
       if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
           (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
         cur_best_score = sco;
+	*best_score_stats = acc;
 	if (left_edge) {
 	  pos = seg.x - 0.1;
 	  left_edge = false;
@@ -63,10 +78,12 @@ double LineOptimizer::LineOptimize(
     // cerr << "x-boundary=" << seg.x << "\n";
     acc->PlusEquals(*seg.delta);
   }
+
   float sco = acc->ComputeScore();
   if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
       (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
     cur_best_score = sco;
+    *best_score_stats = acc;
     if (left_edge) {
       pos = 0;
     } else {

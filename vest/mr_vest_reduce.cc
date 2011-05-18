@@ -10,6 +10,7 @@
 #include "error_surface.h"
 #include "line_optimizer.h"
 #include "b64tools.h"
+#include "dtree.h"
 
 using namespace std;
 namespace po = boost::program_options;
@@ -18,6 +19,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
   po::options_description opts("Configuration options");
   opts.add_options()
         ("loss_function,l",po::value<string>(), "Loss function being optimized")
+        ("dtree,d",po::value<string>(), "Use dtree model instead of standard line optimizer")
         ("help,h", "Help");
   po::options_description dcmdline_options;
   dcmdline_options.add(opts);
@@ -33,11 +35,9 @@ int main(int argc, char** argv) {
   po::variables_map conf;
   InitCommandLine(argc, argv, &conf);
   const string loss_function = conf["loss_function"].as<string>();
+  const bool use_dtree = conf["dtree"].as<bool>();
   ScoreType type = ScoreTypeFromString(loss_function);
-  LineOptimizer::ScoreType opt_type = LineOptimizer::MAXIMIZE_SCORE;
-  if (type == TER || type == AER) {
-    opt_type = LineOptimizer::MINIMIZE_SCORE;
-  }
+  LineOptimizer::ScoreType opt_type = LineOptimizer::GetOptType(type);
   string last_key;
   vector<ErrorSurface> esv;
   while(cin) {
@@ -52,18 +52,28 @@ int main(int argc, char** argv) {
     if (key != last_key) {
       if (!last_key.empty()) {
 	float score;
-        double x = LineOptimizer::LineOptimize(esv, opt_type, &score);
+	Score* stats_result; // unused
+	// x is the position along the line (feature weight) giving the maximum
+        double x = LineOptimizer::LineOptimize(esv, opt_type, &stats_result, &score);
 	cout << last_key << "|" << x << "|" << score << endl;
       }
       last_key = key;
       esv.clear();
     }
-    if (val.size() % 4 != 0) {
+
+    // value has "sent_id b64_str"
+    size_t valsep = val.find(" ");
+    assert(string::npos != valsep);
+    assert(valsep >= 0);
+    string sent_id = val.substr(0, valsep); //unused
+    string b64val = val.substr(valsep+1);
+
+    if (b64val.size() % 4 != 0) {
       cerr << "B64 encoding error 1! Skipping.\n";
       continue;
     }
-    string encoded(val.size() / 4 * 3, '\0');
-    if (!B64::b64decode(reinterpret_cast<const unsigned char*>(&val[0]), val.size(), &encoded[0], encoded.size())) {
+    string encoded(b64val.size() / 4 * 3, '\0');
+    if (!B64::b64decode(reinterpret_cast<const unsigned char*>(&b64val[0]), b64val.size(), &encoded[0], encoded.size())) {
       cerr << "B64 encoding error 2! Skipping.\n";
       continue;
     }
@@ -74,7 +84,8 @@ int main(int argc, char** argv) {
     // cerr << "ESV=" << esv.size() << endl;
     // for (int i = 0; i < esv.size(); ++i) { cerr << esv[i].size() << endl; }
     float score;
-    double x = LineOptimizer::LineOptimize(esv, opt_type, &score);
+    Score* stats_result; //unused
+    double x = LineOptimizer::LineOptimize(esv, opt_type, &stats_result, &score);
     cout << last_key << "|" << x << "|" << score << endl;
   }
   return 0;

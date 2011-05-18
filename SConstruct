@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import check_boost
 
 # EXPERIMENTAL and HACKY version of cdec build in scons
 
@@ -16,7 +17,8 @@ AddOption('--efence', dest='efence', action='store_true',
                   help='use electric fence for debugging memory corruptions')
 
 platform = ARGUMENTS.get('OS', Platform())
-include = Split('decoder utils klm mteval training .')
+# Need vest for dtree
+include = Split('decoder dtree utils klm mteval training vest .')
 env = Environment(PREFIX=GetOption('prefix'),
                       PLATFORM = platform,
 #                      BINDIR = bin,
@@ -29,7 +31,7 @@ env = Environment(PREFIX=GetOption('prefix'),
 
 
 # Do some autoconf-like sanity checks (http://www.scons.org/wiki/SconsAutoconf)
-conf = Configure(env)
+conf = Configure(env, custom_tests = {'CheckBoost' : check_boost.CheckBoost})
 print('Checking if the environment is sane...')
 if not conf.CheckCXX():
     print('!! Your compiler and/or environment is not correctly configured.')
@@ -45,6 +47,11 @@ if boost:
    env.Append(CCFLAGS='-DHAVE_BOOST',
               CPPPATH=boost+'/include',
 	      LIBPATH=boost+'/lib')
+
+# Check boost version (older versions have problems with program options)
+if not conf.CheckBoost('1.46'):
+    print('Boost version >= 1.46 needed')
+    Exit(1)
 
 if not conf.CheckLib('boost_program_options'):
    print "Boost library 'boost_program_options' not found"
@@ -80,7 +87,7 @@ if glc:
    srcs.append(glc+'/feature-factory.cc')
    srcs.append(glc+'/cdec/ff_glc.cc')
 
-for pattern in ['decoder/*.cc', 'decoder/*.c', 'klm/*/*.cc', 'utils/*.cc', 'mteval/*.cc', 'vest/*.cc']:
+for pattern in ['decoder/*.cc', 'decoder/*.c', 'dtree/*.cc', 'klm/*/*.cc', 'utils/*.cc', 'mteval/*.cc', 'vest/*.cc']:
     srcs.extend([ file for file in Glob(pattern)
     		       if not 'test' in str(file)
 		       	  and 'build_binary.cc' not in str(file)
@@ -90,6 +97,7 @@ for pattern in ['decoder/*.cc', 'decoder/*.c', 'klm/*/*.cc', 'utils/*.cc', 'mtev
 			  and 'fast_score.cc' not in str(file)
                           and 'cdec.cc' not in str(file)
                           and 'mr_' not in str(file)
+                          and 'dtree.cc' not in str(file)
                           and 'utils/ts.cc' != str(file)
 		])
 
@@ -99,7 +107,7 @@ def comb(cc, srcs):
    x.extend(srcs)
    return x
 
-env.Program(target='decoder/cdec', source=comb('decoder/cdec.cc', srcs))
+env.Program(target='cdec', source=comb('decoder/cdec.cc', srcs))
 # TODO: The various decoder tests
 # TODO: extools
 env.Program(target='klm/lm/build_binary', source=comb('klm/lm/build_binary.cc', srcs))
@@ -126,6 +134,9 @@ env.Program(target='vest/sentclient', source=['vest/sentclient.c'], LINKFLAGS='-
 env.Program(target='vest/mr_vest_generate_mapper_input', source=comb('vest/mr_vest_generate_mapper_input.cc', srcs))
 env.Program(target='vest/mr_vest_map', source=comb('vest/mr_vest_map.cc', srcs))
 env.Program(target='vest/mr_vest_reduce', source=comb('vest/mr_vest_reduce.cc', srcs))
+
+# Decision tree stuffs
+env.Program(target='dtree/dtree', source=comb('dtree/dtree.cc', srcs))
 #env.Program(target='vest/lo_test', source=comb('vest/lo_test.cc', srcs))
 # TODO: util tests
 

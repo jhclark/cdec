@@ -20,8 +20,10 @@ struct LineOptimizer {
   static double LineOptimize(
      const std::vector<ErrorSurface>& envs,
      const LineOptimizer::ScoreType type,
+     Score** best_score_stats,
      float* best_score,
-     const double epsilon = 1.0/65536.0);
+     const double epsilon = 1.0/65536.0,
+     const ScoreP outside_stats = NULL);
 
   // return a random vector of length 1 where all dimensions
   // not listed in dimensions will be 0.
@@ -37,10 +39,17 @@ struct LineOptimizer {
      const std::vector<int>& primary,
      int additional_random_directions,
      RandomNumberGenerator<boost::mt19937>* rng,
-     std::vector<SparseVector<double> >* dirs
-     , bool include_primary=true
+     std::vector<SparseVector<double> >* dirs,
+     bool include_primary=true
     );
 
+  static LineOptimizer::ScoreType GetOptType(::ScoreType type) {
+    ScoreType opt_type = LineOptimizer::MAXIMIZE_SCORE;
+    if (type == TER || type == AER) {
+      opt_type = LineOptimizer::MINIMIZE_SCORE;
+    }
+    return opt_type;
+  }
 };
 
 #endif
