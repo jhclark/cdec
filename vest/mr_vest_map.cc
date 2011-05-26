@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
     // cerr << "Error surface has " << es.size() << " segments\n";
     string val;
     es.Serialize(&val);
-    cout << 'M' << ' ' << << s_origin << ' ' << s_axis << '\t' << sent_id << ' ';
+    cout << 'M' << ' ' << s_origin << ' ' << s_axis << '\t' << sent_id << ' ';
     B64::b64encode(val.c_str(), val.size(), &cout);
     cout << endl << flush;
   }
