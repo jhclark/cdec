@@ -288,13 +288,13 @@ while (1){
 	}
 	my $cmd = "$pcmd $decoder_cmd 2> $decoderLog 1> $runFile";
 	print STDERR "COMMAND:\n$cmd\n";
-	check_bash_call($cmd);
+	check_bash_call_log("$decoderLog", "$cmd");
         my $num_hgs;
         my $num_topbest;
         my $retries = 0;
 	while($retries < 5) {
-	    $num_hgs = check_output("ls $dir/hgs/*.gz | wc -l");
-	    $num_topbest = check_output("wc -l < $runFile");
+	    chomp($num_hgs = check_output("ls $dir/hgs/*.gz | wc -l"));
+	    chomp($num_topbest = check_output("wc -l < $runFile"));
 	    print STDERR "NUMBER OF HGs: $num_hgs\n";
 	    print STDERR "NUMBER OF TOP-BEST HYPs: $num_topbest\n";
 	    if($devSize == $num_hgs && $devSize == $num_topbest) {
@@ -305,7 +305,8 @@ while (1){
 	    }
 	    $retries++;
 	}
-	die "Dev set contains $devSize sentences, but we don't have topbest and hypergraphs for all these! Decoder failure? Check $decoderLog\n" if ($devSize != $num_hgs || $devSize != $num_topbest);
+	unchecked_call("cat >&2 $decoderLog");
+	die "Dev set contains $devSize sentences, but we don't have topbest and hypergraphs for all these! We have $num_hgs hypergraphs and $num_topbest topbest. Decoder failure? Check $decoderLog (dumped above)\n" if ($devSize != $num_hgs || $devSize != $num_topbest);
 	my $dec_score = check_output("cat $runFile | $SCORER $refs_comma_sep -l $metric");
 	chomp $dec_score;
 	print STDERR "DECODER SCORE: $dec_score\n";
