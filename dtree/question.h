@@ -1,3 +1,7 @@
+#include <vector>
+#include <map>
+using namespace std;
+
 struct DTSent {
   vector<WordID> src;
   map<string, string> sgml;
@@ -5,7 +9,7 @@ struct DTSent {
 
 class Question {
 public:
-  virtual bool ask(const DTSent& sent) =0;
+  virtual bool ask(const DTSent& sent) const =0;
 };
 
 class QuestionQuestion : public Question {
@@ -14,7 +18,7 @@ public:
     qmark_ = TD::Convert("?");
   }
 
-  bool ask(const DTSent& sent) {
+  bool ask(const DTSent& sent) const {
     WordID lastTok = sent.src.back();
     return lastTok == qmark_;
   }
@@ -26,7 +30,7 @@ class LengthQuestion : public Question {
 public:
   LengthQuestion(const int len) : len_(len) {}
 
-  bool ask(const DTSent& sent) {
+  bool ask(const DTSent& sent) const {
     return sent.src.size() >= len_;
   }
 private:
