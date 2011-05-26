@@ -8,15 +8,6 @@
 
 using namespace std;
 
-typedef ErrorSurface::const_iterator ErrorIter;
-
-// sort by increasing x-ints
-struct IntervalComp {
-  bool operator() (const ErrorIter& a, const ErrorIter& b) const {
-    return a->x < b->x;
-  }
-};
-
 double LineOptimizer::LineOptimize(
     const vector<ErrorSurface>& surfaces,
     const LineOptimizer::ScoreType type,
@@ -36,7 +27,7 @@ double LineOptimizer::LineOptimize(
   }
   
   // sort by point on (weight) line where each ErrorSegment induces a change in the error rate
-  sort(all_ints.begin(), all_ints.end(), IntervalComp());
+  sort(all_ints.begin(), all_ints.end(), ErrorIntervalComp());
   double last_boundary = all_ints.front()->x;
   ScoreP accp = all_ints.front()->delta->GetZero();
   Score *acc=accp.get();
@@ -44,7 +35,7 @@ double LineOptimizer::LineOptimize(
   // if user provided some "outside" sufficient stats for a portion of the tuning set that
   // we are not currently optimizing, apply that
   if(outside_stats != NULL) {
-    acc->PlusEquals(outside_stats);
+    acc->PlusEquals(*outside_stats);
   }
 
   float& cur_best_score = *best_score;

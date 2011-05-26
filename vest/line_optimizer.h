@@ -9,6 +9,20 @@
 
 class Weights;
 
+// sort by increasing x-ints
+struct ErrorIntervalComp {
+  bool operator() (const ErrorIter& a, const ErrorIter& b) const {
+    return a->x < b->x;
+  }
+};
+
+// sort by increasing x-ints
+struct ErrorSegmentComp {
+  bool operator() (const ErrorSegment& a, const ErrorSegment& b) const {
+    return a.x < b.x;
+  }
+};
+
 struct LineOptimizer {
 
   // use MINIMIZE_SCORE for things like TER, WER

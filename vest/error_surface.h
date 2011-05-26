@@ -21,4 +21,6 @@ class ErrorSurface : public std::vector<ErrorSegment> {
   void Deserialize(ScoreType type, const std::string& in);
 };
 
+typedef ErrorSurface::const_iterator ErrorIter;
+
 #endif
