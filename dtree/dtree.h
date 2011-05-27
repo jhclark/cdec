@@ -23,15 +23,24 @@ typedef vector<DTSent>::const_iterator SentIter;
 typedef vector<SparseVector<double> >::const_iterator DirIter;
 
 struct DTNode {
-  Question* question_;
+  const Question* question_;
   DTNode* yes_branch_;
   DTNode* no_branch_;
   SparseVector<double> weights_;
 
-  DTNode(Question* q)
+  // internal node
+  DTNode(Question* q, DTNode* yes_branch, DTNode* no_branch)
     : question_(q),
-      yes_branch_(NULL),
-      no_branch_(NULL)
+      yes_branch_(yes_branch),
+      no_branch_(no_branch)
+  {}
+
+  // leaf node
+  DTNode(SparseVector<double>& weights)
+  : question_(NULL),
+    yes_branch_(NULL),
+    no_branch_(NULL),
+    weights_(weights)
   {}
 
   bool IsLeaf() { return (question_ == NULL); }
@@ -47,12 +56,13 @@ class DTreeOptimizer {
    : opt_type_(opt_type),
      line_epsilon_(line_epsilon),
      dt_epsilon_(dt_epsilon),
-     min_sents_per_node_(min_sents_per_node)
+     min_sents_per_node_(min_sents_per_node),
+     DEBUG(false)
     {
       questions_.push_back(shared_ptr<Question>(new QuestionQuestion()));
-      questions_.push_back(shared_ptr<Question>(new LengthQuestion(3)));
-      questions_.push_back(shared_ptr<Question>(new LengthQuestion(5)));
-      questions_.push_back(shared_ptr<Question>(new LengthQuestion(7)));
+      for(int i=2; i<25; ++i) {
+	questions_.push_back(shared_ptr<Question>(new LengthQuestion(i)));
+      }
     
       // TODO: Question factory
       // TODO: LDA topic question
@@ -124,52 +134,63 @@ class DTreeOptimizer {
     }
   }
 
-  // TODO: Accept multiple origins so that we can do multiple
-  //       iterations of MERT
-  // this method sorts the error surfaces if they are not already sorted
-  void UpdateStats(const SparseVector<double>& weights,
-		   const SparseVector<double>& origin,
-		   const vector<SparseVector<double> >& dirs,
-		   vector<vector<ErrorSurface> >& surfaces_by_dir_by_sent,
-		   const vector<bool>& active_sents,
-		   vector<ScoreP>* parent_stats_by_sent) {
+  void SolveForDirectionAndStep(const SparseVector<double>& weights,
+				const SparseVector<double>& origin,
+				const vector<SparseVector<double> >& dirs,
+				int* iMatchDir,
+				double* step) {
 
     const double MINF = -numeric_limits<double>::infinity();
-    double step = MINF;
-    int iMatchDir = -1;
     // determine which direction contains our weights
     // if we're at the origin, any direction will match
-    for(unsigned i=0; i < dirs.size() && iMatchDir == -1; ++i) {
-      step = SolveStep(origin, dirs.at(i), weights);
-      if(step != MINF) {
-	iMatchDir = i;
+    for(unsigned i=0; i < dirs.size(); ++i) {
+      *step = SolveStep(origin, dirs.at(i), weights);
+      if(*step != MINF) {
+	*iMatchDir = i;
+	return;
       }
     }
-    if(iMatchDir == -1) {
+    if(*iMatchDir == -1) {
       cerr << "No matching direction found. I have no visibility of the requested region of the error surface." << endl;
       cerr << "Weights: " << weights << endl;
       cerr << "Origin: " << origin << endl;
       abort();
     }
+  }
+
+  // TODO: Accept multiple origins so that we can do multiple
+  //       iterations of MERT
+  // this method sorts the error surfaces if they are not already sorted
+  void UpdateStats(const int iMatchDir,
+		   const double step,
+		   vector<vector<ErrorSurface> >& surfaces_by_dir_by_sent,
+		   const vector<bool>& active_sents,
+		   vector<ScoreP>* parent_stats_by_sent) {
 
     // now collect the sufficient statistics at this weight point for each sentence
     for(size_t iSent = 0; iSent < active_sents.size(); ++iSent) {
       if(active_sents.at(iSent)) {
+	assert(surfaces_by_dir_by_sent.size() > iMatchDir);
+	assert(surfaces_by_dir_by_sent.at(iMatchDir).size() > iSent);
 	ErrorSurface& sent_surface = surfaces_by_dir_by_sent.at(iMatchDir).at(iSent);
 	
 	// sort by point on (weight) line where each ErrorSegment induces a change in the error rate
 	sort(sent_surface.begin(), sent_surface.end(), ErrorSegmentComp());
 	
+	if(DEBUG) cerr << "Accumulating sufficient statistics for sentence " << iSent << " along direction " << iMatchDir << " by " << step << endl;
 	ScoreP accp = sent_surface.front().delta->GetZero();
 	for(ErrorIter it = sent_surface.begin(); it != sent_surface.end(); ++it) {
+	  if(DEBUG) cerr << "stepping: " << *it << endl;
 	  if(it->x < step) {
 	    // we haven't yet stepped onto the line segment on this surface
 	    // containing the error count of interest
 	    accp->PlusEquals(*it->delta);
+	    if(DEBUG) cerr << "added: " << *accp << endl;
 	  } else {
-	    break;
+	    //break;
 	  }
 	}
+	if(DEBUG) cerr << "Stats: " << *accp << endl;
 	(*parent_stats_by_sent)[iSent] = accp;
       }
     }
@@ -208,28 +229,36 @@ class DTreeOptimizer {
 
       // grow the left side, then the right
       GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, yes_sents, *dtree.yes_branch_);
-      float best_score = GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, no_sents, *dtree.no_branch_);
-      return best_score;
+      GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, no_sents, *dtree.no_branch_);
+      // TODO: Combine scores for trees with height > 1
+      return 0.0;
 
     } else {
       // we're at a leaf... start working
 
       // determine the error counts for each sentence under the
       // current weights at this node
+      int iMatchDir;
+      double step;
+      SolveForDirectionAndStep(dtree.weights_, origin, dirs, &iMatchDir, &step);
+
       vector<ScoreP> parent_stats_by_sent(src_sents.size());
       parent_stats_by_sent.resize(src_sents.size());
-      UpdateStats(dtree.weights_, origin, dirs, surfaces_by_dir_by_sent, active_sents, &parent_stats_by_sent);
+      UpdateStats(iMatchDir, step, surfaces_by_dir_by_sent, active_sents, &parent_stats_by_sent);
 
       ScoreP node_score = surfaces_by_dir_by_sent.front().front().front().delta->GetZero();
       for(size_t i=0; i<parent_stats_by_sent.size(); ++i) {
 	node_score->PlusEquals(*parent_stats_by_sent.at(i));
+	cerr << "Accumulating node score: " << *node_score << endl;
       }
       cerr << "Projected node score before splitting: " << node_score->ComputeScore() << endl;
 
       float best_score = 0.0;
       int best_qid = -1;
-      int best_dir_id = -1;
-      double best_dir_update = 0.0;
+      int best_yes_dir_id = -1;
+      int best_no_dir_id = -1;
+      double best_yes_dir_update = 0.0;
+      double best_no_dir_update = 0.0;
       for(size_t qid = 0; qid < questions_.size(); ++qid) {
 	const Question& q = *questions_.at(qid);
 
@@ -250,35 +279,56 @@ class DTreeOptimizer {
 	  // now optimize each node
 
 	  float q_best_score;
-	  size_t q_best_dir_id;
-	  double q_best_dir_update;
+	  size_t q_best_yes_dir_id;
+	  double q_best_yes_dir_update;
 	  OptimizeNode(dirs, yes_sents, surfaces_by_dir_by_sent, parent_stats_by_sent,
-		       &q_best_score, &q_best_dir_id, &q_best_dir_update);
-	  cerr << "Projected score: " << q_best_score << endl;
+		       &q_best_score, &q_best_yes_dir_id, &q_best_yes_dir_update);
+	  cerr << "Projected score after optimizing yes branch: " << q_best_score << endl;
+
+	  // grab sufficient stats for sentences we just optimized
+	  // so that the optimization of the no branch is slightly
+	  // more accurate than the yes branch
+	  // NOTE: somewhat expensive vector copy
+	  vector<ScoreP> parent_and_yes_stats_by_sent = parent_stats_by_sent;
+	  UpdateStats(q_best_yes_dir_id, q_best_yes_dir_update, surfaces_by_dir_by_sent, yes_sents, &parent_and_yes_stats_by_sent);
+
+	  size_t q_best_no_dir_id;
+	  double q_best_no_dir_update;
+	  OptimizeNode(dirs, yes_sents, surfaces_by_dir_by_sent, parent_and_yes_stats_by_sent,
+		       &q_best_score, &q_best_no_dir_id, &q_best_no_dir_update);
+	  cerr << "Projected score after optimizing yes and no branch: " << q_best_score << endl;
+
 	  // TODO: Generalize to best()
-	  // TODO: Check for minimum improvement as part of regulariz
+	  // TODO: Check for minimum improvement as part of regularization
 	  if(q_best_score > best_score) {
 	    best_qid = qid;
 	    best_score = q_best_score;
-	    best_dir_id = q_best_dir_id;
-	    best_dir_update = q_best_dir_update;
+	    best_yes_dir_id = q_best_yes_dir_id;
+	    best_no_dir_id = q_best_no_dir_id;
+	    best_yes_dir_update = q_best_yes_dir_update;
+	    best_no_dir_update = q_best_no_dir_update;
 	  }
 	}
       }
 
       assert(best_qid != -1);
-      assert(best_dir_id != -1);
+      assert(best_yes_dir_id != -1);
+      assert(best_no_dir_id != -1);
       
-      // TODO: For the best question, go back and find the error segment
+      // TODO: For the best question, go back and find the error segments
       //       that will be active under the optimized weights
       const Question& best_q = *questions_.at(best_qid);
-      vector<bool> yes_sents(src_sents.size());
-      vector<bool> no_sents(src_sents.size());
-      yes_sents.resize(src_sents.size());
-      no_sents.resize(src_sents.size());
-      int yes = 0;
-      int no = 0;
-      Partition(best_q, src_sents, active_sents, &yes, &no, &yes_sents, &no_sents);
+      cerr << "Best question: " << best_q << " with score " << best_score << endl;
+
+      SparseVector<double> yes_weights = dtree.weights_;
+      yes_weights += dirs.at(best_yes_dir_id) * best_yes_dir_update;
+      SparseVector<double> no_weights = dtree.weights_;
+      no_weights += dirs.at(best_no_dir_id) * best_no_dir_update;
+
+      // create new branches for our decision tree
+      dtree.question_ = &best_q;
+      dtree.yes_branch_ = new DTNode(yes_weights);
+      dtree.no_branch_ = new DTNode(no_weights);
 
       return best_score;
     }
@@ -347,4 +397,5 @@ class DTreeOptimizer {
   const float line_epsilon_;
   const float dt_epsilon_;
   const int min_sents_per_node_;
+  const bool DEBUG;
 };

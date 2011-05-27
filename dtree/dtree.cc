@@ -194,7 +194,7 @@ int main(int argc, char** argv) {
 
   // TODO: Load existing decision tree
   // for now, we just set the weights equal to the origin
-  DTNode dtree(NULL);
+  DTNode dtree(NULL,NULL,NULL);
   dtree.weights_ = origin;
 
   vector<bool> active_sents(src_sents.size());
