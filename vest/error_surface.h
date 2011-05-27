@@ -14,6 +14,11 @@ struct ErrorSegment {
   ErrorSegment() : x(0), delta(NULL) {}
 };
 
+inline std::ostream& operator<<(std::ostream& out, const ErrorSegment& score) {
+  out << "((" << score.x << ": " << *(score.delta) << "))";
+  return out;
+}
+
 class ErrorSurface : public std::vector<ErrorSegment> {
  public:
   ~ErrorSurface();
