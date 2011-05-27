@@ -410,12 +410,16 @@ void BLEUScore::ScoreDetails(string* details) const {
   float bleu = ComputeScore(&precs, &bp);
   for (int i=N();i<4;++i)
     precs[i]=0.;
-  sprintf(buf, "BLEU = %.2f, %.1f|%.1f|%.1f|%.1f (brev=%.3f)",
+  sprintf(buf, "BLEU = %.2f, %.1f|%.1f|%.1f|%.1f %.0f/%.0f|%.0f/%.0f|%.0f/%.0f|%.0f/%.0f (brev=%.3f)",
        bleu*100.0,
        precs[0]*100.0,
        precs[1]*100.0,
        precs[2]*100.0,
        precs[3]*100.0,
+       correct_ngram_hit_counts[0], hyp_ngram_counts[0],
+       correct_ngram_hit_counts[2], hyp_ngram_counts[1],
+       correct_ngram_hit_counts[3], hyp_ngram_counts[2],
+       correct_ngram_hit_counts[4], hyp_ngram_counts[3],
        bp);
   *details = buf;
 }

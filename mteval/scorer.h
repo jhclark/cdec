@@ -52,6 +52,13 @@ protected:
   Score(Score const&) {  }
 };
 
+inline std::ostream& operator<<(std::ostream& out, const Score& score) {
+  std::string str;
+  score.ScoreDetails(&str);
+  out << str;
+  return out;
+}
+
 //TODO: make sure default copy ctors for score types do what we want.
 template <class Derived>
 struct ScoreBase : public Score {
