@@ -11,7 +11,7 @@ class Score;
 struct ErrorSegment {
   double x;
   ScoreP delta;
-  ErrorSegment() : x(0), delta() {}
+  ErrorSegment() : x(0), delta(NULL) {}
 };
 
 class ErrorSurface : public std::vector<ErrorSegment> {

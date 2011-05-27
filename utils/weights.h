@@ -15,6 +15,8 @@ class Weights {
   void InitSparseVector(SparseVector<double>* w) const;
   void InitFromVector(const std::vector<double>& w);
   void InitFromVector(const SparseVector<double>& w);
+  static bool ReadSparseVectorString(const std::string& s, SparseVector<double>* v);
+
  private:
   std::vector<double> wv_;
 };

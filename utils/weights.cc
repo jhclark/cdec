@@ -5,6 +5,7 @@
 #include "fdict.h"
 #include "filelib.h"
 #include "verbose.h"
+#include "stringlib.h"
 
 using namespace std;
 
@@ -87,4 +88,26 @@ void Weights::InitFromVector(const SparseVector<double>& w) {
   wv_.resize(FD::NumFeats(), 0.0);
   for (int i = 1; i < FD::NumFeats(); ++i)
     wv_[i] = w.value(i);
+}
+
+bool Weights::ReadSparseVectorString(const string& s, SparseVector<double>* v) {
+#if 0
+  // this should work, but untested.
+  std::istringstream i(s);
+  i>>*v;
+#else
+  vector<string> fields;
+  Tokenize(s, ';', &fields);
+  if (fields.empty()) return false;
+  for (int i = 0; i < fields.size(); ++i) {
+    vector<string> pair(2);
+    Tokenize(fields[i], '=', &pair);
+    if (pair.size() != 2) {
+      cerr << "Error parsing vector string: " << fields[i] << endl;
+      return false;
+    }
+    v->set_value(FD::Convert(pair[0]), atof(pair[1].c_str()));
+  }
+  return true;
+#endif
 }
