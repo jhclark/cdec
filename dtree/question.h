@@ -1,5 +1,6 @@
 #include <vector>
 #include <map>
+#include <iostream>
 using namespace std;
 
 struct DTSent {
@@ -9,8 +10,14 @@ struct DTSent {
 
 class Question {
 public:
-  virtual bool ask(const DTSent& sent) const =0;
+  virtual bool Ask(const DTSent& sent) const =0;
+  virtual void Print(ostream& out) const =0;
 };
+
+inline ostream& operator<<(ostream& out, const Question& q) {
+  q.Print(out);
+  return out;
+}
 
 class QuestionQuestion : public Question {
 public:
@@ -18,9 +25,13 @@ public:
     qmark_ = TD::Convert("?");
   }
 
-  bool ask(const DTSent& sent) const {
+  bool Ask(const DTSent& sent) const {
     WordID lastTok = sent.src.back();
     return lastTok == qmark_;
+  }
+
+  void Print(ostream& out) const {
+    out << "Is last token '?'";
   }
 private:
   WordID qmark_;
@@ -30,8 +41,12 @@ class LengthQuestion : public Question {
 public:
   LengthQuestion(const int len) : len_(len) {}
 
-  bool ask(const DTSent& sent) const {
+  bool Ask(const DTSent& sent) const {
     return sent.src.size() >= len_;
+  }
+
+  void Print(ostream& out) const {
+    out << "Has length >= " << len_;
   }
 private:
   int len_;

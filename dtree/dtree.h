@@ -62,27 +62,31 @@ class DTreeOptimizer {
   bool Partition(const Question& q,
 		 const vector<DTSent>& src_sents,
 		 const vector<bool>& active_sents,
+		 int* yes,
+		 int* no,
 		 vector<bool>* yes_sents,
 		 vector<bool>* no_sents) {
 
-    size_t yes = 0;
-    size_t no = 0;
+    *yes = 0;
+    *no = 0;
+    assert(yes_sents->size() == active_sents.size());
+    assert(no_sents->size() == active_sents.size());
     for(size_t sid = 0; sid < active_sents.size(); ++sid) {
       (*yes_sents)[sid] = false;
       (*no_sents)[sid] = false;
       if(active_sents.at(sid)) {
-	if(q.ask(src_sents.at(sid))) {
+	if(q.Ask(src_sents.at(sid))) {
 	  (*yes_sents)[sid] = true;
-	  ++yes;
+	  ++*yes;
 	} else {
 	  (*no_sents)[sid] = true;
-	  ++no;
+	  ++*no;
 	}
       }
     }
 
     // TODO: Say how many nodes belong to each set according to this question
-    return (yes >= min_sents_per_node_) && (no >= min_sents_per_node_);
+    return (*yes >= min_sents_per_node_) && (*no >= min_sents_per_node_);
   }
 
   // determine the step size needed to get from origin to goal moving in direction dir
@@ -93,8 +97,6 @@ class DTreeOptimizer {
 
     assert(origin.size() == dir.size());
     assert(origin.size() == goal.size());
-
-    cerr << origin << goal << endl;
 
     if(origin == goal) {
       cerr << origin << goal << endl;
@@ -168,6 +170,7 @@ class DTreeOptimizer {
 	    break;
 	  }
 	}
+	(*parent_stats_by_sent)[iSent] = accp;
       }
     }
   }
@@ -195,9 +198,13 @@ class DTreeOptimizer {
       assert(dtree.yes_branch_ != NULL);
       assert(dtree.no_branch_ != NULL);
 
-      vector<bool> yes_sents;
-      vector<bool> no_sents;
-      Partition(*dtree.question_, src_sents, active_sents, &yes_sents, &no_sents);
+      vector<bool> yes_sents(src_sents.size());
+      vector<bool> no_sents(src_sents.size());
+      yes_sents.resize(src_sents.size());
+      no_sents.resize(src_sents.size());
+      int yes = 0;
+      int no = 0;
+      Partition(*dtree.question_, src_sents, active_sents, &yes, &no, &yes_sents, &no_sents);
 
       // grow the left side, then the right
       GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, yes_sents, *dtree.yes_branch_);
@@ -209,33 +216,47 @@ class DTreeOptimizer {
 
       // determine the error counts for each sentence under the
       // current weights at this node
-      vector<ScoreP> parent_stats_by_sent;
+      vector<ScoreP> parent_stats_by_sent(src_sents.size());
+      parent_stats_by_sent.resize(src_sents.size());
       UpdateStats(dtree.weights_, origin, dirs, surfaces_by_dir_by_sent, active_sents, &parent_stats_by_sent);
-      
-      float best_score;
-      size_t best_qid;
-      size_t best_dir_id;
-      double best_dir_update;
+
+      ScoreP node_score = surfaces_by_dir_by_sent.front().front().front().delta->GetZero();
+      for(size_t i=0; i<parent_stats_by_sent.size(); ++i) {
+	node_score->PlusEquals(*parent_stats_by_sent.at(i));
+      }
+      cerr << "Projected node score before splitting: " << node_score->ComputeScore() << endl;
+
+      float best_score = 0.0;
+      int best_qid = -1;
+      int best_dir_id = -1;
+      double best_dir_update = 0.0;
       for(size_t qid = 0; qid < questions_.size(); ++qid) {
 	const Question& q = *questions_.at(qid);
 
 	// partition the active sentences for this node into sets for
 	// child nodes based on this question
-	vector<bool> yes_sents;
-	vector<bool> no_sents;
-	bool valid = Partition(q, src_sents, active_sents, &yes_sents, &no_sents);
+	vector<bool> yes_sents(src_sents.size());
+	vector<bool> no_sents(src_sents.size());
+	yes_sents.resize(src_sents.size());
+	no_sents.resize(src_sents.size());
+	int yes = 0;
+	int no = 0;
+	bool valid = Partition(q, src_sents, active_sents, &yes, &no, &yes_sents, &no_sents);
+	cerr << "Trying question " << qid << ": " << q << "; yes = " << yes << " no = " << no << endl;
 	if(!valid) {
 	  // too few sentences in one of the sets
+	  cerr << "Skipping qid " << qid << " since it fragments the data too much" << endl;
 	} else {
 	  // now optimize each node
 
-	  // TODO: Obtain parent_stats_by_sent
 	  float q_best_score;
 	  size_t q_best_dir_id;
 	  double q_best_dir_update;
 	  OptimizeNode(dirs, yes_sents, surfaces_by_dir_by_sent, parent_stats_by_sent,
 		       &q_best_score, &q_best_dir_id, &q_best_dir_update);
+	  cerr << "Projected score: " << q_best_score << endl;
 	  // TODO: Generalize to best()
+	  // TODO: Check for minimum improvement as part of regulariz
 	  if(q_best_score > best_score) {
 	    best_qid = qid;
 	    best_score = q_best_score;
@@ -244,13 +265,20 @@ class DTreeOptimizer {
 	  }
 	}
       }
+
+      assert(best_qid != -1);
+      assert(best_dir_id != -1);
       
       // TODO: For the best question, go back and find the error segment
       //       that will be active under the optimized weights
       const Question& best_q = *questions_.at(best_qid);
-      vector<bool> yes_sents;
-      vector<bool> no_sents;
-      Partition(best_q, src_sents, active_sents, &yes_sents, &no_sents);
+      vector<bool> yes_sents(src_sents.size());
+      vector<bool> no_sents(src_sents.size());
+      yes_sents.resize(src_sents.size());
+      no_sents.resize(src_sents.size());
+      int yes = 0;
+      int no = 0;
+      Partition(best_q, src_sents, active_sents, &yes, &no, &yes_sents, &no_sents);
 
       return best_score;
     }
@@ -269,6 +297,8 @@ class DTreeOptimizer {
 		    double* best_dir_update) {
 
     assert(sent_ids.size() > 0);
+    assert(parent_stats_by_sent.size() == sent_ids.size());
+    assert(dirs.size() == surfaces_by_dir_by_sent.size());
 
     // accumulate metric stats for sentences outside this DTNode
     ScoreP outside_stats = surfaces_by_dir_by_sent.front().front().front().delta->GetZero();

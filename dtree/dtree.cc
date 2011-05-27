@@ -10,6 +10,7 @@ void ParseOpts(int argc, char** argv, po::variables_map* conf) {
     ("loss_function,l",po::value<string>(), "Loss function being optimized")
     ("src_sents,s",po::value<string>(), "Source sentences (that we will be asking questions about)")
     ("err_surface,e",po::value<string>(), "Directory containing error surfaces for each sentence")
+    ("min_sents,m",po::value<int>(), "Minimum sentences per decision tree node")
     ("help,h", "Help");
 
   po::options_description dcmdline_options;
@@ -164,6 +165,8 @@ int main(int argc, char** argv) {
   ScoreType type = ScoreTypeFromString(loss_function);
   LineOptimizer::ScoreType opt_type = LineOptimizer::GetOptType(type);
 
+  int min_sents_per_node = conf["min_sents"].as<int>();
+
   vector<DTSent> src_sents;
   string inFile = conf["src_sents"].as<string>();
   string errFile = conf["err_surface"].as<string>();
@@ -185,7 +188,6 @@ int main(int argc, char** argv) {
 
   const float DEFAULT_LINE_EPSILON = 1.0/65536.0;
   float dt_epsilon = 1.0/65536.0;
-  int min_sents_per_node = 100;
 
   // TODO: verbosity?
   DTreeOptimizer opt(opt_type, DEFAULT_LINE_EPSILON, dt_epsilon, min_sents_per_node);
