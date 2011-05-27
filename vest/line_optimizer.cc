@@ -18,6 +18,7 @@ double LineOptimizer::LineOptimize(
 
   // cerr << "MIN=" << MINIMIZE_SCORE << " MAX=" << MAXIMIZE_SCORE << "  MINE=" << type << endl;
   // concatenate error surfaces
+  // CHRIS: Why is this a vector of ErrorIter's (ErrorSegment pointers) instead of ErrorSegments? -JON
   vector<ErrorIter> all_ints;
   for (vector<ErrorSurface>::const_iterator i = surfaces.begin();
        i != surfaces.end(); ++i) {
@@ -48,6 +49,7 @@ double LineOptimizer::LineOptimize(
        i != all_ints.end(); ++i) {
     const ErrorSegment& seg = **i;
     assert(seg.delta);
+    // don't waste time examining extremely small changes in the weights
     if (seg.x - last_boundary > epsilon) {
       float sco = acc->ComputeScore();
       if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
