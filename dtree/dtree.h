@@ -94,7 +94,10 @@ class DTreeOptimizer {
     assert(origin.size() == dir.size());
     assert(origin.size() == goal.size());
 
+    cerr << origin << goal << endl;
+
     if(origin == goal) {
+      cerr << origin << goal << endl;
       return 0.0;
     } else {
       const double MINF = -numeric_limits<double>::infinity();
@@ -131,17 +134,19 @@ class DTreeOptimizer {
 
     const double MINF = -numeric_limits<double>::infinity();
     double step = MINF;
-    size_t iMatchDir = -1;
+    int iMatchDir = -1;
     // determine which direction contains our weights
     // if we're at the origin, any direction will match
-    for(size_t i=0; i < dirs.size() && iMatchDir != -1; ++i) {
+    for(unsigned i=0; i < dirs.size() && iMatchDir == -1; ++i) {
       step = SolveStep(origin, dirs.at(i), weights);
       if(step != MINF) {
 	iMatchDir = i;
       }
     }
     if(iMatchDir == -1) {
-      cerr << "No matching direction found. I have no visibility of the requested region of the error surface.";
+      cerr << "No matching direction found. I have no visibility of the requested region of the error surface." << endl;
+      cerr << "Weights: " << weights << endl;
+      cerr << "Origin: " << origin << endl;
       abort();
     }
 
