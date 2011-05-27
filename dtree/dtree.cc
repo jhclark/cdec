@@ -205,6 +205,8 @@ int main(int argc, char** argv) {
 
   float best_score = opt.GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, active_sents, dtree);
 
+  // print new decision tree to stdout
+  cout << dtree << endl;
   // TODO: Save decision tree for decoder use
   // Serialize(outFile, dtree);
 }

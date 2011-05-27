@@ -43,8 +43,27 @@ struct DTNode {
     weights_(weights)
   {}
 
-  bool IsLeaf() { return (question_ == NULL); }
+  bool IsLeaf() const {
+    return (question_ == NULL);
+  }
+
+  void ToString(ostream& out) const {
+    out << "(";
+    if(IsLeaf()) {
+      out << weights_;
+    } else {
+      question_->Serialize(out);
+      yes_branch_->ToString(out);
+      no_branch_->ToString(out);
+    }
+    out << ")";
+  }
 };
+
+inline ostream& operator<<(ostream& out, const DTNode& dtree) {
+  dtree.ToString(out);
+  return out;
+}
 
 class DTreeOptimizer {
 
@@ -294,7 +313,7 @@ class DTreeOptimizer {
 
 	  size_t q_best_no_dir_id;
 	  double q_best_no_dir_update;
-	  OptimizeNode(dirs, yes_sents, surfaces_by_dir_by_sent, parent_and_yes_stats_by_sent,
+	  OptimizeNode(dirs, no_sents, surfaces_by_dir_by_sent, parent_and_yes_stats_by_sent,
 		       &q_best_score, &q_best_no_dir_id, &q_best_no_dir_update);
 	  cerr << "Projected score after optimizing yes and no branch: " << q_best_score << endl;
 

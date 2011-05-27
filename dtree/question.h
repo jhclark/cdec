@@ -12,6 +12,7 @@ class Question {
 public:
   virtual bool Ask(const DTSent& sent) const =0;
   virtual void Print(ostream& out) const =0;
+  virtual void Serialize(ostream& out) const =0;
 };
 
 inline ostream& operator<<(ostream& out, const Question& q) {
@@ -33,6 +34,10 @@ public:
   void Print(ostream& out) const {
     out << "Is last token '?'";
   }
+
+  void Serialize(ostream& out) const {
+    out << "QQ";
+  }
 private:
   WordID qmark_;
 };
@@ -47,6 +52,10 @@ public:
 
   void Print(ostream& out) const {
     out << "Has length >= " << len_;
+  }
+
+  void Serialize(ostream& out) const {
+    out << "L" << len_;
   }
 private:
   int len_;
