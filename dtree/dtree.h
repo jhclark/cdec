@@ -200,13 +200,16 @@ class DTreeOptimizer {
 	ScoreP accp = sent_surface.front().delta->GetZero();
 	for(ErrorIter it = sent_surface.begin(); it != sent_surface.end(); ++it) {
 	  if(DEBUG) cerr << "stepping: " << *it << endl;
-	  if(it->x < step) {
+	  if(it->x <= step) {
 	    // we haven't yet stepped onto the line segment on this surface
 	    // containing the error count of interest
 	    accp->PlusEquals(*it->delta);
 	    if(DEBUG) cerr << "added: " << *accp << endl;
 	  } else {
-	    //break;
+	    if(DEBUG)
+	      cerr << "skipped: " << *accp << endl;
+	    else
+	      break;
 	  }
 	}
 	if(DEBUG) cerr << "Stats: " << *accp << endl;
@@ -268,10 +271,10 @@ class DTreeOptimizer {
       ScoreP node_score = surfaces_by_dir_by_sent.front().front().front().delta->GetZero();
       for(size_t i=0; i<parent_stats_by_sent.size(); ++i) {
 	node_score->PlusEquals(*parent_stats_by_sent.at(i));
-	cerr << "Accumulating node score: " << *node_score << endl;
+	if(DEBUG) cerr << "Accumulating node score: " << *node_score << endl;
       }
       cerr << "Projected node score before splitting: " << node_score->ComputeScore() << endl;
-
+      
       float best_score = 0.0;
       int best_qid = -1;
       int best_yes_dir_id = -1;
