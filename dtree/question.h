@@ -1,6 +1,8 @@
 #include <vector>
 #include <map>
 #include <iostream>
+#include <string>
+#include <sstream>
 using namespace std;
 
 struct DTSent {
@@ -11,12 +13,12 @@ struct DTSent {
 class Question {
 public:
   virtual bool Ask(const DTSent& sent) const =0;
-  virtual void Print(ostream& out) const =0;
+  virtual string ToString() const =0;
   virtual void Serialize(ostream& out) const =0;
 };
 
 inline ostream& operator<<(ostream& out, const Question& q) {
-  q.Print(out);
+  out << q.ToString();
   return out;
 }
 
@@ -31,8 +33,8 @@ public:
     return lastTok == qmark_;
   }
 
-  void Print(ostream& out) const {
-    out << "Is last token '?'";
+  string ToString() const {
+    return "Is last token '?'";
   }
 
   void Serialize(ostream& out) const {
@@ -50,8 +52,10 @@ public:
     return sent.src.size() >= len_;
   }
 
-  void Print(ostream& out) const {
-    out << "Has length >= " << len_;
+  string ToString() const {
+    stringstream s;
+    s << "Has length >= " << len_;
+    return s.str();
   }
 
   void Serialize(ostream& out) const {

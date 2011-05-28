@@ -1,6 +1,7 @@
 #include <iostream>
 #include <vector>
 #include <map>
+#include <iomanip>
 using namespace std;
 
 #include <boost/shared_ptr.hpp>
@@ -273,7 +274,18 @@ class DTreeOptimizer {
 	node_score->PlusEquals(*parent_stats_by_sent.at(i));
 	if(DEBUG) cerr << "Accumulating node score: " << *node_score << endl;
       }
-      cerr << "Projected node score before splitting: " << node_score->ComputeScore() << endl;
+      const float before_score = node_score->ComputeScore()*100;
+      cerr << "Projected node score before splitting: " << before_score << endl;
+
+      // optimize this node on its own to make sure gains
+      // are due to splitting, not a larger view of the decoder's search space
+      float n_best_score;
+      size_t n_best_dir_id;
+      double n_best_dir_update;
+      OptimizeNode(dirs, active_sents, surfaces_by_dir_by_sent, parent_stats_by_sent,
+		   &n_best_score, &n_best_dir_id, &n_best_dir_update);
+      cerr << "Projected score after optimizing pre-split node: " << n_best_score << endl;
+
       
       float best_score = 0.0;
       int best_qid = -1;
@@ -293,10 +305,17 @@ class DTreeOptimizer {
 	int yes = 0;
 	int no = 0;
 	bool valid = Partition(q, src_sents, active_sents, &yes, &no, &yes_sents, &no_sents);
-	cerr << "Trying question " << qid << ": " << q << "; yes = " << yes << " no = " << no << endl;
+	cerr << "Question "
+	     << setw(4) << qid
+	     << setw(0) << ": "
+	     << setw(25) << q
+	     << setw(0) << " ::"
+	     << setw(0) << " yes = " << setw(4) << yes
+	     << setw(0) << " no = " << setw(4) << no
+	     << setw(0) << ": ";
 	if(!valid) {
 	  // too few sentences in one of the sets
-	  cerr << "Skipping qid " << qid << " since it fragments the data too much" << endl;
+	  cerr << "Skipping since it fragments the data too much" << endl;
 	} else {
 	  // now optimize each node
 
@@ -305,7 +324,7 @@ class DTreeOptimizer {
 	  double q_best_yes_dir_update;
 	  OptimizeNode(dirs, yes_sents, surfaces_by_dir_by_sent, parent_stats_by_sent,
 		       &q_best_score, &q_best_yes_dir_id, &q_best_yes_dir_update);
-	  cerr << "Projected score after optimizing yes branch: " << q_best_score << endl;
+	  cerr << "(Y branch: " << q_best_score << ") ";
 
 	  // grab sufficient stats for sentences we just optimized
 	  // so that the optimization of the no branch is slightly
@@ -318,7 +337,8 @@ class DTreeOptimizer {
 	  double q_best_no_dir_update;
 	  OptimizeNode(dirs, no_sents, surfaces_by_dir_by_sent, parent_and_yes_stats_by_sent,
 		       &q_best_score, &q_best_no_dir_id, &q_best_no_dir_update);
-	  cerr << "Projected score after optimizing yes and no branch: " << q_best_score << endl;
+	  const float score_gain = q_best_score - n_best_score;
+	  cerr << "Y&N branch: " << q_best_score << " (gain = " << score_gain << ")" << endl;
 
 	  // TODO: Generalize to best()
 	  // TODO: Check for minimum improvement as part of regularization
@@ -336,11 +356,11 @@ class DTreeOptimizer {
       assert(best_qid != -1);
       assert(best_yes_dir_id != -1);
       assert(best_no_dir_id != -1);
-      
-      // TODO: For the best question, go back and find the error segments
-      //       that will be active under the optimized weights
+
+      // TODO: Generalize for TER?
+      const float score_gain = best_score - n_best_score;
       const Question& best_q = *questions_.at(best_qid);
-      cerr << "Best question: " << best_q << " with score " << best_score << endl;
+      cerr << "Best question: " << best_q << " with score " << best_score << " (gain = " << score_gain << ")" << endl;
 
       SparseVector<double> yes_weights = dtree.weights_;
       yes_weights += dirs.at(best_yes_dir_id) * best_yes_dir_update;
@@ -403,6 +423,7 @@ class DTreeOptimizer {
       Score* stats_result; //unused
       double x = LineOptimizer::LineOptimize(esv, opt_type_, &stats_result, &score,
 					     line_epsilon_, outside_stats);
+      score *= 100;
 
       // TODO: Print information about how well we did with this direction...
       // TODO: Generalize to best() operator for TER
