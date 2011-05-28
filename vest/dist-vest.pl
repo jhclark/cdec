@@ -38,6 +38,7 @@ die "Can't find $libcall" unless -e $libcall;
 my $decoder = $cdec;
 my $lines_per_mapper = 400;
 my $rand_directions = 15;
+my $keep_temp = 0;
 my $iteration = 1;
 my $run_local = 0;
 my $best_weights;
@@ -84,6 +85,7 @@ if (GetOptions(
 	"help" => \$help,
 	"interval" => \$interval,
 	"iteration=i" => \$iteration,
+	"keep_temp" => \$keep_temp,
 	"local" => \$run_local,
 	"use-make=i" => \$use_make,
 	"max-iterations=i" => \$max_iterations,
@@ -470,7 +472,9 @@ while (1){
 			my $v = ($ori{$k} + $axi{$k} * $x) / $norm;
 			print W "$k $v\n";
 		}
-		check_call("rm $dir/splag.$im1/*");
+		if(!$keep_temp) {
+		  check_call("rm $dir/splag.$im1/*");
+		}
 		$inweights = $finalFile;
 	}
 	$lastWeightsFile = "$dir/weights.$iteration";
@@ -631,7 +635,7 @@ Options:
 		shared-memory machines where qsub is unavailable).
 
 	--decode-nodes <I>
-		Number of decoder processes to run in parallel. [default=15]
+		Number of decoder processes to run in parallel. [default=$decode_nodes]
 
 	--decoder <decoder path>
 		Decoder binary to use.
@@ -646,9 +650,12 @@ Options:
 	--iteration <I>
 		Starting iteration number.  If not specified, defaults to 1.
 
+        --keep-temp
+                Keep temporary files around instead of deleting them.
+
 	--max-iterations <M>
 		Maximum number of iterations to run.  If not specified, defaults
-		to 10.
+		to $max_iterations.
 
 	--pass-suffix <S>
 		If the decoder is doing multi-pass decoding, the pass suffix "2",
@@ -670,9 +677,13 @@ Options:
 		After each iteration, rescale all feature weights such that feature-
 		name has a weight of 1.0.
 
+        --opt-iterations [-i] <num>
+                Number of optimizer iterations to run within each decoder iteration.
+                Defaults to $optimization_iters.
+
 	--rand-directions <num>
 		MERT will attempt to optimize along all of the principle directions,
-		set this parameter to explore other directions. Defaults to 5.
+		set this parameter to explore other directions. Defaults to $rand_directions.
 
 	--source-file <file>
 		Dev set source file.
