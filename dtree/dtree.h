@@ -72,21 +72,15 @@ class DTreeOptimizer {
  DTreeOptimizer(LineOptimizer::ScoreType opt_type,
 		const double line_epsilon,
 		const double dt_epsilon,
-		const int min_sents_per_node) 
+		const int min_sents_per_node,
+		const vector<shared_ptr<Question> >& questions) 
    : opt_type_(opt_type),
      line_epsilon_(line_epsilon),
      dt_epsilon_(dt_epsilon),
      min_sents_per_node_(min_sents_per_node),
+    questions_(questions),
      DEBUG(false)
-    {
-      questions_.push_back(shared_ptr<Question>(new QuestionQuestion()));
-      for(int i=2; i<25; ++i) {
-	questions_.push_back(shared_ptr<Question>(new LengthQuestion(i)));
-      }
-    
-      // TODO: Question factory
-      // TODO: LDA topic question
-  }
+    {}
 
   // returns whether or not this is a valid partition
   bool Partition(const Question& q,
@@ -435,7 +429,7 @@ class DTreeOptimizer {
     }
   }
 
-  vector<shared_ptr<Question> > questions_;
+  const vector<shared_ptr<Question> > questions_;
   const LineOptimizer::ScoreType opt_type_;
   const float line_epsilon_;
   const float dt_epsilon_;

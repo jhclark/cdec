@@ -64,3 +64,35 @@ public:
 private:
   int len_;
 };
+
+class OovQuestion : public Question {
+public:
+ OovQuestion(const set<WordID>& vocab,
+	     const int num)
+   : vocab_(vocab),
+    num_(num) {}
+
+  bool Ask(const DTSent& sent) const {
+    int n = 0;
+    for(size_t i=0; i<sent.src.size(); ++i) {
+      const WordID wid = sent.src.at(i);
+      if(vocab_.find(wid) == vocab_.end()) {
+	++n;
+      }
+    }
+    return n >= num_;
+  }
+
+  string ToString() const {
+    stringstream s;
+    s << "OOV count >= " << num_;
+    return s.str();
+  }
+
+  void Serialize(ostream& out) const {
+    out << "OOV" << num_;
+  }
+private:
+  const set<WordID>& vocab_;
+  const int num_;
+};
