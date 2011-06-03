@@ -29,6 +29,14 @@ env = Environment(PREFIX=GetOption('prefix'),
                       LIBS = Split('boost_program_options boost_serialization boost_thread z'),
 		      CCFLAGS=Split('-g -O3 -DHAVE_SCONS'))
 
+import os
+if os.path.exists('colorgcc.pl'):
+    path = os.path.abspath('colorgcc.pl')
+    print('Found colorgcc at ' + path)
+    env['CC'] = path
+    env['CXX'] = path
+else:
+    print('colorgcc not found')
 
 # Do some autoconf-like sanity checks (http://www.scons.org/wiki/SconsAutoconf)
 conf = Configure(env, custom_tests = {'CheckBoost' : check_boost.CheckBoost})
@@ -67,7 +75,7 @@ if mpi:
       Exit(1)   
 
 if GetOption('efence'):
-   env.Append(LIBS=Split('efence Segfault'))
+   env.Append(LIBS=Split('efence')) #Segfault (as a lib)
 
 print('Environment is sane.')
 print
@@ -98,6 +106,7 @@ for pattern in ['decoder/*.cc', 'decoder/*.c', 'dtree/*.cc', 'klm/*/*.cc', 'util
                           and 'cdec.cc' not in str(file)
                           and 'mr_' not in str(file)
                           and 'dtree.cc' not in str(file)
+                          and 'extract_topbest.cc' not in str(file)
                           and 'utils/ts.cc' != str(file)
 		])
 
@@ -107,7 +116,7 @@ def comb(cc, srcs):
    x.extend(srcs)
    return x
 
-env.Program(target='cdec', source=comb('decoder/cdec.cc', srcs))
+env.Program(target='decoder/cdec', source=comb('decoder/cdec.cc', srcs))
 # TODO: The various decoder tests
 # TODO: extools
 env.Program(target='klm/lm/build_binary', source=comb('klm/lm/build_binary.cc', srcs))
@@ -137,6 +146,7 @@ env.Program(target='vest/mr_vest_reduce', source=comb('vest/mr_vest_reduce.cc', 
 
 # Decision tree stuffs
 env.Program(target='dtree/dtree', source=comb('dtree/dtree.cc', srcs))
+env.Program(target='dtree/extract_topbest', source=comb('dtree/extract_topbest.cc', srcs))
 #env.Program(target='vest/lo_test', source=comb('vest/lo_test.cc', srcs))
 # TODO: util tests
 

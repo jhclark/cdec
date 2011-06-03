@@ -4,6 +4,7 @@
 #include <iomanip>
 using namespace std;
 
+#include <boost/algorithm/string.hpp>
 #include <boost/shared_ptr.hpp>
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
@@ -17,6 +18,7 @@ namespace po = boost::program_options;
 #include "tdict.h"
 #include "filelib.h"
 #include "stringlib.h"
+#include "weights.h"
 
 #include "question.h"
 
@@ -24,40 +26,66 @@ typedef vector<DTSent>::const_iterator SentIter;
 typedef vector<SparseVector<double> >::const_iterator DirIter;
 
 struct DTNode {
-  const Question* question_;
-  DTNode* yes_branch_;
-  DTNode* no_branch_;
+  shared_ptr<const Question> question_;
+
+  // there will be 2 branches for a binary tree
+  vector<DTNode> branches_;
   SparseVector<double> weights_;
 
   // internal node
-  DTNode(Question* q, DTNode* yes_branch, DTNode* no_branch)
+  DTNode(const shared_ptr<Question> q, const vector<DTNode>& branches)
     : question_(q),
-      yes_branch_(yes_branch),
-      no_branch_(no_branch)
+      branches_(branches)
   {}
 
   // leaf node
   DTNode(SparseVector<double>& weights)
-  : question_(NULL),
-    yes_branch_(NULL),
-    no_branch_(NULL),
-    weights_(weights)
+  : weights_(weights)
   {}
 
   bool IsLeaf() const {
     return (question_ == NULL);
   }
 
-  void ToString(ostream& out) const {
-    out << "(";
+  void ToString(ostream& out, unsigned indent=0) const {
+    out << string(indent, ' ') << "(";
     if(IsLeaf()) {
       out << weights_;
     } else {
+      out << '"';
       question_->Serialize(out);
-      yes_branch_->ToString(out);
-      no_branch_->ToString(out);
+      out << "\"\n";
+      for(size_t i=0; i<branches_.size(); ++i) {
+	out << string(indent, ' ');
+	branches_.at(i).ToString(out, indent+2);
+      }
     }
-    out << ")";
+    out << string(indent, ' ') << ")\n";
+  }
+
+  void Load(const string& file) {
+    ReadFile in_read(file);
+    istream &in = *in_read.stream();
+    while(in) {
+      string line;
+      getline(in, line);
+      if (line.empty()) continue;
+      trim(line);
+      if(starts_with(line, "(\"")) {
+	// non-leaf, parse question name
+	trim_if(line, is_any_of("(\")"));
+	if(line == "SrcSent") {
+	  question_.reset(new SrcSentQuestion);
+	} else {
+	  cerr << "Unsupported question name: " << line << endl;
+	  abort();
+	}
+      } else {
+	// leaf, parse weights
+	trim_if(line, is_any_of("()"));
+	Weights::ReadSparseVectorString(line, &weights_);
+      }
+    }
   }
 };
 
@@ -78,7 +106,7 @@ class DTreeOptimizer {
      line_epsilon_(line_epsilon),
      dt_epsilon_(dt_epsilon),
      min_sents_per_node_(min_sents_per_node),
-    questions_(questions),
+     questions_(questions),
      DEBUG(false)
     {}
 
@@ -86,31 +114,37 @@ class DTreeOptimizer {
   bool Partition(const Question& q,
 		 const vector<DTSent>& src_sents,
 		 const vector<bool>& active_sents,
-		 int* yes,
-		 int* no,
-		 vector<bool>* yes_sents,
-		 vector<bool>* no_sents) {
+		 vector<unsigned>* branch_counts,
+		 vector<vector<bool> >* active_sents_by_branch) {
 
-    *yes = 0;
-    *no = 0;
-    assert(yes_sents->size() == active_sents.size());
-    assert(no_sents->size() == active_sents.size());
+    branch_counts->clear();
+    active_sents_by_branch->clear();
+
     for(size_t sid = 0; sid < active_sents.size(); ++sid) {
-      (*yes_sents)[sid] = false;
-      (*no_sents)[sid] = false;
       if(active_sents.at(sid)) {
-	if(q.Ask(src_sents.at(sid))) {
-	  (*yes_sents)[sid] = true;
-	  ++*yes;
-	} else {
-	  (*no_sents)[sid] = true;
-	  ++*no;
+	unsigned k = q.Ask(src_sents.at(sid));
+	size_t num_branches = branch_counts->size();
+	if(k >= num_branches) {
+	  branch_counts->resize(k+1, 0);
+	  active_sents_by_branch->resize(k+1);
+	  // initialize the newly created entries
+	  for(unsigned j=k; j<k+1; ++j) {
+	    active_sents_by_branch->at(j).resize(active_sents.size(), false);
+	  }
+	  num_branches = k+1;
 	}
+	branch_counts->at(k)++;
+	active_sents_by_branch->at(k).at(sid) = true;
       }
     }
 
-    // TODO: Say how many nodes belong to each set according to this question
-    return (*yes >= min_sents_per_node_) && (*no >= min_sents_per_node_);
+    // check if this is a valid parition
+    for(unsigned i=0; i<branch_counts->size(); ++i) {
+      if(branch_counts->at(i) < min_sents_per_node_) {
+	return false;
+      }
+    }
+    return true;
   }
 
   // determine the step size needed to get from origin to goal moving in direction dir
@@ -175,7 +209,7 @@ class DTreeOptimizer {
   // TODO: Accept multiple origins so that we can do multiple
   //       iterations of MERT
   // this method sorts the error surfaces if they are not already sorted
-  void UpdateStats(const int iMatchDir,
+  void UpdateStats(const size_t iMatchDir,
 		   const double step,
 		   vector<vector<ErrorSurface> >& surfaces_by_dir_by_sent,
 		   const vector<bool>& active_sents,
@@ -208,7 +242,7 @@ class DTreeOptimizer {
 	  }
 	}
 	if(DEBUG) cerr << "Stats: " << *accp << endl;
-	(*parent_stats_by_sent)[iSent] = accp;
+	parent_stats_by_sent->at(iSent) = accp;
       }
     }
   }
@@ -232,22 +266,17 @@ class DTreeOptimizer {
     // first, traverse the current dtree to its ends
     if(!dtree.IsLeaf()) {
       // need to keep recursing
-      
-      assert(dtree.yes_branch_ != NULL);
-      assert(dtree.no_branch_ != NULL);
-
-      vector<bool> yes_sents(src_sents.size());
-      vector<bool> no_sents(src_sents.size());
-      yes_sents.resize(src_sents.size());
-      no_sents.resize(src_sents.size());
-      int yes = 0;
-      int no = 0;
-      Partition(*dtree.question_, src_sents, active_sents, &yes, &no, &yes_sents, &no_sents);
+      vector<unsigned> counts_by_branch;
+      vector<vector<bool> > active_sents_by_branch; 
+      Partition(*dtree.question_, src_sents, active_sents, &counts_by_branch, &active_sents_by_branch);
 
       // grow the left side, then the right
-      GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, yes_sents, *dtree.yes_branch_);
-      GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, no_sents, *dtree.no_branch_);
-      // TODO: Combine scores for trees with height > 1
+      // TODO: XXX: Combine scores for trees with height > 1 !!!
+      size_t num_branches = active_sents_by_branch.size();
+      for(size_t iBranch=0; iBranch<num_branches; ++iBranch) {
+	assert(dtree.branches_.size() == num_branches);
+	GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, active_sents_by_branch.at(iBranch), dtree.branches_.at(iBranch));
+      }
       return 0.0;
 
     } else {
@@ -280,91 +309,84 @@ class DTreeOptimizer {
 		   &n_best_score, &n_best_dir_id, &n_best_dir_update);
       cerr << "Projected score after optimizing pre-split node: " << n_best_score << endl;
 
-      
       float best_score = 0.0;
       int best_qid = -1;
-      int best_yes_dir_id = -1;
-      int best_no_dir_id = -1;
-      double best_yes_dir_update = 0.0;
-      double best_no_dir_update = 0.0;
+      vector<size_t> best_dir_ids;
+      vector<double> best_dir_updates;
       for(size_t qid = 0; qid < questions_.size(); ++qid) {
 	const Question& q = *questions_.at(qid);
 
 	// partition the active sentences for this node into sets for
 	// child nodes based on this question
-	vector<bool> yes_sents(src_sents.size());
-	vector<bool> no_sents(src_sents.size());
-	yes_sents.resize(src_sents.size());
-	no_sents.resize(src_sents.size());
-	int yes = 0;
-	int no = 0;
-	bool valid = Partition(q, src_sents, active_sents, &yes, &no, &yes_sents, &no_sents);
+
+	vector<unsigned> counts_by_branch;
+	vector<vector<bool> > active_sents_by_branch; 
+	bool valid = Partition(q, src_sents, active_sents, &counts_by_branch, &active_sents_by_branch);
+	const size_t num_branches = counts_by_branch.size();
+	
 	cerr << "Question "
 	     << setw(4) << qid
 	     << setw(0) << ": "
 	     << setw(25) << q
-	     << setw(0) << " ::"
-	     << setw(0) << " yes = " << setw(4) << yes
-	     << setw(0) << " no = " << setw(4) << no
-	     << setw(0) << ": ";
+	     << setw(0) << " ::";
+	for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
+	  cerr << setw(0) << " branch " << iBranch << " = " << setw(4) << counts_by_branch.at(iBranch);
+	}
+	cerr << setw(0) << ": ";
 	if(!valid) {
 	  // too few sentences in one of the sets
 	  cerr << "Skipping since it fragments the data too much" << endl;
 	} else {
 	  // now optimize each node
 
+	  vector<ScoreP> prev_stats_by_sent = parent_stats_by_sent;
 	  float q_best_score;
-	  size_t q_best_yes_dir_id;
-	  double q_best_yes_dir_update;
-	  OptimizeNode(dirs, yes_sents, surfaces_by_dir_by_sent, parent_stats_by_sent,
-		       &q_best_score, &q_best_yes_dir_id, &q_best_yes_dir_update);
-	  cerr << "(Y branch: " << q_best_score << ") ";
+	  vector<size_t> q_best_dir_ids(num_branches);
+	  vector<double> q_best_dir_updates(num_branches);
+	  q_best_dir_ids.resize(num_branches);
+	  q_best_dir_updates.resize(num_branches);
 
-	  // grab sufficient stats for sentences we just optimized
-	  // so that the optimization of the no branch is slightly
-	  // more accurate than the yes branch
-	  // NOTE: somewhat expensive vector copy
-	  vector<ScoreP> parent_and_yes_stats_by_sent = parent_stats_by_sent;
-	  UpdateStats(q_best_yes_dir_id, q_best_yes_dir_update, surfaces_by_dir_by_sent, yes_sents, &parent_and_yes_stats_by_sent);
+	  for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
+	    OptimizeNode(dirs, active_sents_by_branch.at(iBranch), surfaces_by_dir_by_sent, prev_stats_by_sent,
+			 &q_best_score, &q_best_dir_ids.at(iBranch), &q_best_dir_updates.at(iBranch));
+	    cerr << "(branch: " << iBranch << " " << q_best_score << ") ";
 
-	  size_t q_best_no_dir_id;
-	  double q_best_no_dir_update;
-	  OptimizeNode(dirs, no_sents, surfaces_by_dir_by_sent, parent_and_yes_stats_by_sent,
-		       &q_best_score, &q_best_no_dir_id, &q_best_no_dir_update);
+	    // grab sufficient stats for sentences we just optimized
+	    // so that the optimization of the no branch is slightly
+	    // more accurate than the previous branch
+	    UpdateStats(q_best_dir_ids.at(iBranch), q_best_dir_updates.at(iBranch),
+			surfaces_by_dir_by_sent, active_sents_by_branch.at(iBranch), &prev_stats_by_sent);
+	  }
 	  const float score_gain = q_best_score - n_best_score;
-	  cerr << "Y&N branch: " << q_best_score << " (gain = " << score_gain << ")" << endl;
+	  cerr << " (gain = " << score_gain << ")" << endl;
 
 	  // TODO: Generalize to best()
 	  // TODO: Check for minimum improvement as part of regularization
+	  // TODO: pointer copy instead of vector copy
 	  if(q_best_score > best_score) {
 	    best_qid = qid;
 	    best_score = q_best_score;
-	    best_yes_dir_id = q_best_yes_dir_id;
-	    best_no_dir_id = q_best_no_dir_id;
-	    best_yes_dir_update = q_best_yes_dir_update;
-	    best_no_dir_update = q_best_no_dir_update;
+	    best_dir_ids = q_best_dir_ids;
+	    best_dir_updates = q_best_dir_updates;
 	  }
 	}
       }
 
       assert(best_qid != -1);
-      assert(best_yes_dir_id != -1);
-      assert(best_no_dir_id != -1);
 
       // TODO: Generalize for TER?
       const float score_gain = best_score - n_best_score;
-      const Question& best_q = *questions_.at(best_qid);
-      cerr << "Best question: " << best_q << " with score " << best_score << " (gain = " << score_gain << ")" << endl;
-
-      SparseVector<double> yes_weights = dtree.weights_;
-      yes_weights += dirs.at(best_yes_dir_id) * best_yes_dir_update;
-      SparseVector<double> no_weights = dtree.weights_;
-      no_weights += dirs.at(best_no_dir_id) * best_no_dir_update;
+      const shared_ptr<Question>& best_q = questions_.at(best_qid);
+      cerr << "Best question: " << *best_q << " with score " << best_score << " (gain = " << score_gain << ")" << endl;
 
       // create new branches for our decision tree
-      dtree.question_ = &best_q;
-      dtree.yes_branch_ = new DTNode(yes_weights);
-      dtree.no_branch_ = new DTNode(no_weights);
+      dtree.question_ = best_q;
+      const size_t num_branches = best_dir_ids.size();
+      for(unsigned iBranch=0; iBranch < num_branches; ++iBranch) {
+	SparseVector<double> branch_weights = dtree.weights_; // copy this node's weights
+	branch_weights += dirs.at(best_dir_ids.at(iBranch)) * best_dir_updates.at(iBranch);
+	dtree.branches_.push_back(DTNode(branch_weights));
+      }
 
       return best_score;
     }

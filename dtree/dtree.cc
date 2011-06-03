@@ -30,6 +30,7 @@ void LoadSents(const string& file,
 
   ReadFile rf(file);
   istream& in = *rf.stream();
+  unsigned id = 0;
   while(in) {
     string line;
     getline(in, line);
@@ -37,9 +38,11 @@ void LoadSents(const string& file,
     
     sents->resize(sents->size()+1);
     DTSent& sent = sents->back();
-    
+    sent.id = id;
     ProcessAndStripSGML(&line, &sent.sgml);
     TD::ConvertSentence(line, &sent.src);
+    
+    ++id;
   }
 }
 
@@ -210,7 +213,9 @@ int main(int argc, char** argv) {
   float dt_epsilon = 1.0/65536.0;
 
   vector<shared_ptr<Question> > questions;
-  questions.push_back(shared_ptr<Question>(new QuestionQuestion()));
+  questions.push_back(shared_ptr<Question>(new SrcSentQuestion));
+#if 0
+  questions.push_back(shared_ptr<Question>(new QuestionQuestion));
   for(int i=1; i<4; ++i) {
     questions.push_back(shared_ptr<Question>(new OovQuestion(src_vocab, i)));
   }
@@ -219,23 +224,24 @@ int main(int argc, char** argv) {
   }
   // TODO: Question factory
   // TODO: LDA topic question
-
+#endif
 
   // TODO: verbosity?
   DTreeOptimizer opt(opt_type, DEFAULT_LINE_EPSILON, dt_epsilon, min_sents_per_node, questions);
 
   // TODO: Load existing decision tree
   // for now, we just set the weights equal to the origin
-  DTNode dtree(NULL,NULL,NULL);
-  dtree.weights_ = origin;
+  DTNode dtree(origin);
 
   vector<bool> active_sents(src_sents.size());
   active_sents.resize(src_sents.size());
   for(size_t i=0; i<src_sents.size(); ++i) {
-    active_sents[i] = true;
+    active_sents.at(i) = true;
   }
 
   float best_score = opt.GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, active_sents, dtree);
+
+  // TODO: Add option for opt.Oracle
 
   // print new decision tree to stdout
   cout << dtree << endl;

@@ -3,16 +3,22 @@
 #include <iostream>
 #include <string>
 #include <sstream>
+#include <exception>
 using namespace std;
 
 struct DTSent {
+  unsigned id;
   vector<WordID> src;
   map<string, string> sgml;
+  bool operator==(const DTSent& other) const {
+    return src == other.src;
+  }
 };
 
 class Question {
 public:
-  virtual bool Ask(const DTSent& sent) const =0;
+  // answer is which branch (class/child) the given sentence belongs in, according to this question
+  virtual unsigned Ask(const DTSent& sent) const =0;
   virtual string ToString() const =0;
   virtual void Serialize(ostream& out) const =0;
 };
@@ -28,9 +34,9 @@ public:
     qmark_ = TD::Convert("?");
   }
 
-  bool Ask(const DTSent& sent) const {
+  unsigned Ask(const DTSent& sent) const {
     WordID lastTok = sent.src.back();
-    return lastTok == qmark_;
+    return (lastTok == qmark_) ? 1 : 0;
   }
 
   string ToString() const {
@@ -48,8 +54,8 @@ class LengthQuestion : public Question {
 public:
   LengthQuestion(const int len) : len_(len) {}
 
-  bool Ask(const DTSent& sent) const {
-    return sent.src.size() >= len_;
+  unsigned Ask(const DTSent& sent) const {
+    return (sent.src.size() >= len_) ? 1 : 0;
   }
 
   string ToString() const {
@@ -72,7 +78,7 @@ public:
    : vocab_(vocab),
     num_(num) {}
 
-  bool Ask(const DTSent& sent) const {
+  unsigned Ask(const DTSent& sent) const {
     int n = 0;
     for(size_t i=0; i<sent.src.size(); ++i) {
       const WordID wid = sent.src.at(i);
@@ -80,7 +86,7 @@ public:
 	++n;
       }
     }
-    return n >= num_;
+    return (n >= num_) ? 1 : 0;
   }
 
   string ToString() const {
@@ -95,4 +101,21 @@ public:
 private:
   const set<WordID>& vocab_;
   const int num_;
+};
+
+class SrcSentQuestion : public Question {
+public:
+ SrcSentQuestion() {}
+
+  unsigned Ask(const DTSent& sent) const {
+    return sent.id;
+  }
+
+  string ToString() const {
+    return "What is the tuning set ID of this source sentence?";
+  }
+
+  void Serialize(ostream& out) const {
+    out << "SrcSent";
+  }
 };

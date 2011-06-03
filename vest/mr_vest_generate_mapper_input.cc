@@ -5,6 +5,7 @@
 
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <boost/scoped_ptr.hpp>
 
 #include "sampler.h"
 #include "filelib.h"
@@ -15,6 +16,7 @@
 #include "scorer.h"
 #include "oracle_bleu.h"
 #include "ff_bleu.h"
+#include "dtree.h"
 
 const bool DEBUG_ORACLE=true;
 
@@ -78,20 +80,27 @@ struct oracle_directions {
   bool old_to_hope;
   bool fear_to_hope;
   unsigned n_random;
+
+  string dtree_file;
+  boost::scoped_ptr<DTNode> dtree_root;
+
   void AddPrimaryAndRandomDirections() {
     LineOptimizer::CreateOptimizationDirections(
       fids,n_random,&rng,&directions,include_primary);
   }
 
   void Print() {
-    for (int i = 0; i < dev_set_size; ++i)
+    for (int i = 0; i < dev_set_size; ++i) {
+      // use sentence-specific origins for dtree or global origin otherwise
+      Point& sent_origin = dtree_root.get() ? dtree_root->branches_.at(i).weights_ : origin;
       for (int j = 0; j < directions.size(); ++j) {
-        cout << forest_file(i) <<" " << i<<" ";
-        print(cout,origin,"=",";");
-        cout<<" ";
-        print(cout,directions[j],"=",";");
-        cout<<"\n";
+	cout << forest_file(i) <<" " << i<<" ";
+	print(cout,sent_origin,"=",";");
+	cout<<" ";
+	print(cout,directions[j],"=",";");
+	cout<<"\n";
       }
+    }
   }
 
   void AddOptions(po::options_description *opts) {
@@ -110,6 +119,7 @@ struct oracle_directions {
       ("fear_to_hope,f",po::bool_switch(&fear_to_hope),"for each of the oracle_directions, also include a direction from fear to hope (as well as origin to hope)")
       ("no_old_to_hope","don't emit the usual old -> hope oracle")
       ("decoder_translations",po::value<string>(&decoder_translations_file)->default_value(""),"one per line decoder 1best translations for computing document BLEU vs. sentences-seen-so-far BLEU")
+      ("dtree",po::value<string>(&dtree_file)->default_value(""),"Decision tree to be used in determining per-sentence origin points.")
       ;
   }
   void InitCommandLine(int argc, char *argv[], po::variables_map *conf) {
@@ -165,7 +175,7 @@ struct oracle_directions {
     Print();
   }
 
-
+  vector<Point> origins_by_sent;
   Point origin; // old weights that gave model 1best.
   vector<string> optimize_features;
   void UseConf(po::variables_map const& conf) {
@@ -226,7 +236,13 @@ struct oracle_directions {
     weights.InitFromFile(weights_file, &features);
     if (optimize_features.size())
       features=optimize_features;
+
     weights.InitSparseVector(&origin);
+    if(!dtree_file.empty()) {
+      dtree_root.reset(new DTNode(origin));
+      dtree_root->Load(dtree_file);
+      assert(dtree_root->branches_.size() == dev_set_size);
+    }
     fids.clear();
     AddFeatureIds(features);
     oracles.resize(dev_set_size);
