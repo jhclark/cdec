@@ -417,9 +417,9 @@ void BLEUScore::ScoreDetails(string* details) const {
        precs[2]*100.0,
        precs[3]*100.0,
        correct_ngram_hit_counts[0], hyp_ngram_counts[0],
-       correct_ngram_hit_counts[2], hyp_ngram_counts[1],
-       correct_ngram_hit_counts[3], hyp_ngram_counts[2],
-       correct_ngram_hit_counts[4], hyp_ngram_counts[3],
+       correct_ngram_hit_counts[1], hyp_ngram_counts[1],
+       correct_ngram_hit_counts[2], hyp_ngram_counts[2],
+       correct_ngram_hit_counts[3], hyp_ngram_counts[3],
        bp);
   *details = buf;
 }
