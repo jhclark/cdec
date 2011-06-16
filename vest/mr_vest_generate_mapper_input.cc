@@ -240,7 +240,7 @@ struct oracle_directions {
     weights.InitSparseVector(&origin);
     if(!dtree_file.empty()) {
       dtree_root.reset(new DTNode(origin));
-      dtree_root->Load(dtree_file);
+      dtree_root->Load(dtree_file, dev_set_size);
       assert(dtree_root->branches_.size() == dev_set_size);
     }
     fids.clear();

@@ -1,4 +1,5 @@
-#include "dtree.h"
+#include "dtree_split.h"
+#include "dtree_merge.h"
 #include "weights.h"
 
 #include <boost/tokenizer.hpp>
@@ -11,7 +12,10 @@ void ParseOpts(int argc, char** argv, po::variables_map* conf) {
     ("src_sents,s",po::value<string>(), "Source sentences (that we will be asking questions about)")
     ("src_vocab,v",po::value<string>(), "Source vocabulary")
     ("err_surface,e",po::value<string>(), "Directory containing error surfaces for each sentence")
-    ("min_sents,m",po::value<int>(), "Minimum sentences per decision tree node")
+    ("mode,M",po::value<string>(), "Optimization mode. One of: split, merge")
+    ("min_sents,m",po::value<unsigned>(), "Minimum sentences per decision tree node (for split optimizer)")
+    ("beam_size,b",po::value<unsigned>(), "How many best clusterings should we keep around? (for merge optimizer)")
+    ("clusters,c",po::value<unsigned>(), "What is the desired number of output clusters? (for merge optimizer)")
     ("help,h", "Help");
 
   po::options_description dcmdline_options;
@@ -61,7 +65,7 @@ void LoadErrSurfaces(const string& file,
 		     const ScoreType& type,
 		     SparseVector<double>* origin,
 		     vector<SparseVector<double> >* dirs,
-		     vector<vector<ErrorSurface> >* surfaces_by_dir_by_sent) {
+		     vector<DirErrorSurface>* sent_surfs) {
 
   ReadFile rf(file);
   istream& in = *rf.stream();
@@ -114,20 +118,20 @@ void LoadErrSurfaces(const string& file,
     SparseVector<double> dir;
     Weights w_dir;
     assert(Weights::ReadSparseVectorString(s_axis, &dir));
-    
+
+    if(sent_surfs->size() <= sid) {
+      sent_surfs->resize(sid + 1);
+    }    
+    DirErrorSurface& dir_surfs = sent_surfs->at(sid);
+
     // insert this direction into the vector 
     size_t dir_id = IndexOf(*dirs, dir);
     if(dir_id == -1) {
       dir_id = dirs->size();
       dirs->push_back(dir);
-      surfaces_by_dir_by_sent->resize(dir_id + 1);
+      dir_surfs.resize(dir_id + 1);
     }
-
-    vector<ErrorSurface>& surfaces_by_sent = surfaces_by_dir_by_sent->at(dir_id);
-    if(surfaces_by_sent.size() <= sid) {
-      surfaces_by_sent.resize(sid + 1);
-    }
-    ErrorSurface& es = surfaces_by_sent.at(sid);
+    ErrorSurface& es = dir_surfs.AtDir(dir_id);
     if(es.size() != 0) {
       cerr << "ERROR: Unexpectedly received error surface for the same (origin, direction, sentence) from multiple map keys" << endl;
       abort();
@@ -138,24 +142,24 @@ void LoadErrSurfaces(const string& file,
 
 void CheckSanity(const size_t num_srcs,
 		 const vector<SparseVector<double> >& dirs,
-		 const vector<vector<ErrorSurface> >& surfaces_by_dir_by_sent) {
+		 const vector<DirErrorSurface>& sent_surfs) {
 
   // verify that everything is parallel
-  for(size_t iDir=0; iDir<dirs.size(); ++iDir) {
-    const vector<ErrorSurface>& surfaces_by_sent = surfaces_by_dir_by_sent.at(iDir);
-    if(surfaces_by_sent.size() != num_srcs) {
-      cerr << "ERROR: Not enough error surfaces for all sentences sentences ("<<surfaces_by_sent.size()<<") for direction "<< dirs.at(iDir) << endl;
+  for(size_t iSent=0; iSent<num_srcs; ++iSent) {
+    const DirErrorSurface& dsurf = sent_surfs.at(iSent);
+    if(dsurf.size() == 0) {
+      cerr << "ERROR: No directional error surfaces for sentence " << iSent << endl;
       abort();
     }
-    for(size_t iSent=0; iSent<num_srcs; ++iSent) {
-      const ErrorSurface& surf = surfaces_by_sent.at(iSent);
-      if(surf.size() == 0) {
-	cerr << "ERROR: No error segments for sentence " << iSent << " for direction " << dirs.at(iDir) << endl;
+
+    for(size_t iDir=0; iDir<dirs.size(); ++iDir) {
+      const ErrorSurface& surf = dsurf.AtDir(iDir);
+      if(surf.size() != num_srcs) {
+	cerr << "ERROR: Not error segments for sentence " << iSent << " for direction "<< dirs.at(iDir) << endl;
 	abort();
       }
     }
   }
-
 }
 
 void LoadVocab(const string& file,
@@ -188,8 +192,6 @@ int main(int argc, char** argv) {
   set<WordID> src_vocab;
   LoadVocab(src_vocab_file, &src_vocab);
 
-  int min_sents_per_node = conf["min_sents"].as<int>();
-
   vector<DTSent> src_sents;
   string inFile = conf["src_sents"].as<string>();
   string errFile = conf["err_surface"].as<string>();
@@ -197,23 +199,25 @@ int main(int argc, char** argv) {
   cerr << "Loaded " << src_sents.size() << " source sentences" << endl;
 
   SparseVector<double> origin;
-  vector<vector<ErrorSurface> > surfaces_by_dir_by_sent;
+  vector<DirErrorSurface> sent_surfs;
   vector<SparseVector<double> > dirs;
   cerr << "Loading error surfaces..." << endl;
-  LoadErrSurfaces(errFile, type, &origin, &dirs, &surfaces_by_dir_by_sent);
+  LoadErrSurfaces(errFile, type, &origin, &dirs, &sent_surfs);
 
   cerr << "Loaded 1 origin weight vector" << endl;
   cerr << "Loaded " << dirs.size() << " line search directions" << endl;
+  /*
   for(size_t i=0; i<dirs.size(); ++i) {
-    cerr << "For direction " << i << ": Loaded " << surfaces_by_dir_by_sent.at(i).size() << " sentence-level error surfaces" << endl;
+    cerr << "For direction " << i << ": Loaded " << sent_surfs.at(i).size() << " sentence-level error surfaces" << endl;
   }
-  CheckSanity(src_sents.size(), dirs, surfaces_by_dir_by_sent);
+  */
+  CheckSanity(src_sents.size(), dirs, sent_surfs);
 
   const float DEFAULT_LINE_EPSILON = 1.0/65536.0;
   float dt_epsilon = 1.0/65536.0;
 
   vector<shared_ptr<Question> > questions;
-  questions.push_back(shared_ptr<Question>(new SrcSentQuestion));
+  questions.push_back(shared_ptr<Question>(new SrcSentQuestion(src_sents.size())));
 #if 0
   questions.push_back(shared_ptr<Question>(new QuestionQuestion));
   for(int i=1; i<4; ++i) {
@@ -226,25 +230,38 @@ int main(int argc, char** argv) {
   // TODO: LDA topic question
 #endif
 
-  // TODO: verbosity?
-  DTreeOptimizer opt(opt_type, DEFAULT_LINE_EPSILON, dt_epsilon, min_sents_per_node, questions);
-
   // TODO: Load existing decision tree
   // for now, we just set the weights equal to the origin
   DTNode dtree(origin);
-
+  
   vector<bool> active_sents(src_sents.size());
   active_sents.resize(src_sents.size());
   for(size_t i=0; i<src_sents.size(); ++i) {
     active_sents.at(i) = true;
   }
 
-  float best_score = opt.GrowTree(origin, dirs, src_sents, surfaces_by_dir_by_sent, active_sents, dtree);
+  string mode = conf["mode"].as<string>();
+  if(mode == "split") {
+    // TODO: verbosity?
+    unsigned min_sents_per_node = conf["min_sents"].as<unsigned>();
+    DTreeSplitOptimizer opt(opt_type, DEFAULT_LINE_EPSILON, dt_epsilon, min_sents_per_node, questions);
 
-  // TODO: Add option for opt.Oracle
+    float best_score = opt.GrowTree(origin, dirs, src_sents, sent_surfs, active_sents, dtree);
 
-  // print new decision tree to stdout
-  cout << dtree << endl;
-  // TODO: Save decision tree for decoder use
-  // Serialize(outFile, dtree);
+    // TODO: Add option for opt.Oracle
+    
+    // print new decision tree to stdout
+    cout << dtree << endl;
+    // TODO: Save decision tree for decoder use
+    // Serialize(outFile, dtree);
+  } else if(mode == "merge") {
+    unsigned beam_size = conf["beam_size"].as<unsigned>();
+    unsigned clusters = conf["clusters"].as<unsigned>();
+    DTreeMergeOptimizer opt(opt_type, DEFAULT_LINE_EPSILON, dirs, beam_size);
+    opt.MergeNode(origin, src_sents, active_sents, sent_surfs, clusters, dtree);
+
+  } else {
+    cerr << "ERROR: Unrecognized mode: " << mode << endl;
+    abort();
+  }
 }
