@@ -15,6 +15,8 @@ AddOption('--with-mpi', dest='mpi', action='store_true',
                   help='build tools that use Message Passing Interface? (optional)')
 AddOption('--efence', dest='efence', action='store_true',
                   help='use electric fence for debugging memory corruptions')
+AddOption('--no-opt', dest='debug', action='store_true',
+          help='turn off optimization so that we dont remove useful debugging information')
 
 platform = ARGUMENTS.get('OS', Platform())
 # Need vest for dtree
@@ -27,7 +29,12 @@ env = Environment(PREFIX=GetOption('prefix'),
                       CPPPATH = include,
                       LIBPATH = [],
                       LIBS = Split('boost_program_options boost_serialization boost_thread z'),
-		      CCFLAGS=Split('-g -O3 -DHAVE_SCONS'))
+		      CCFLAGS=Split('-g -DHAVE_SCONS'))
+
+if GetOption('debug'):
+    env.Append(CCFLAGS=Split('-O0'))
+else:
+    env.Append(CCFLAGS=Split('-O3'))
 
 import os
 if os.path.exists('colorgcc.pl'):
