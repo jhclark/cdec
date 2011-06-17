@@ -273,7 +273,9 @@ class DTreeOptBase {
 		    const vector<ScoreP>& parent_stats_by_sent,
 		    float* best_score,
 		    size_t* best_dir_id,
-		    double* best_dir_update) {
+		    double* best_dir_update,
+		    size_t* best_dir_err_verts,
+		    size_t* err_verts) {
 
     assert(sent_ids.size() > 0);
     assert(parent_stats_by_sent.size() == sent_ids.size());
@@ -293,21 +295,26 @@ class DTreeOptBase {
       }
     }
 
+    *best_score = 0.0;
+    *err_verts = 0;
+
     for(size_t dir_id = 0; dir_id < dirs.size(); ++dir_id) {
       
       // accumulate the error surface for this direction
       // for the sentences inside this DTNode
       vector<ErrorSurface> esv;
+      size_t points = 0;
       for(size_t i =0; i<sent_count; ++i) {
 	if(sent_ids.at(i)) {
 	  const ErrorSurface& sent_surface = sent_surfs.at(i).AtDir(dir_id);
 	  esv.push_back(sent_surface);
+	  points += sent_surface.size();
 	}
       }
 
       float score;
-      Score* stats_result; //unused
-      double x = LineOptimizer::LineOptimize(esv, opt_type_, &stats_result, &score,
+      ScoreP stats_result; //unused
+      double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
 					     line_epsilon_, outside_stats);
       score *= 100;
 
@@ -317,7 +324,9 @@ class DTreeOptBase {
 	*best_score = score;
 	*best_dir_id = dir_id;
 	*best_dir_update = x;
+	*best_dir_err_verts = points;
       }
+      *err_verts += points;
     }
   }
 

@@ -121,7 +121,9 @@ void LoadErrSurfaces(const string& file,
 
     if(sent_surfs->size() <= sid) {
       sent_surfs->resize(sid + 1);
-    }    
+    }
+
+    // populate the error surface with the sentence we just received
     DirErrorSurface& dir_surfs = sent_surfs->at(sid);
 
     // insert this direction into the vector 
@@ -129,6 +131,10 @@ void LoadErrSurfaces(const string& file,
     if(dir_id == -1) {
       dir_id = dirs->size();
       dirs->push_back(dir);
+    }
+
+    // add this direction to the current sentence's error surface
+    if(dir_surfs.size() <= dir_id) {
       dir_surfs.resize(dir_id + 1);
     }
     ErrorSurface& es = dir_surfs.AtDir(dir_id);
@@ -144,21 +150,31 @@ void CheckSanity(const size_t num_srcs,
 		 const vector<SparseVector<double> >& dirs,
 		 const vector<DirErrorSurface>& sent_surfs) {
 
+  bool error = false;
+
+  if(sent_surfs.size() != num_srcs) {
+    cerr << "ERROR: Expected " << num_srcs << " sentence-level directional error surfaces, but found " << sent_surfs.size() << endl;
+    error = true;
+  }
+
   // verify that everything is parallel
   for(size_t iSent=0; iSent<num_srcs; ++iSent) {
     const DirErrorSurface& dsurf = sent_surfs.at(iSent);
-    if(dsurf.size() == 0) {
-      cerr << "ERROR: No directional error surfaces for sentence " << iSent << endl;
-      abort();
+    if(dsurf.size() != dirs.size()) {
+      cerr << "ERROR: Expected " << dirs.size() << " directional error surfaces for sentence " << iSent << " but found " << dsurf.size() << endl;
+      error = true;
     }
 
     for(size_t iDir=0; iDir<dirs.size(); ++iDir) {
       const ErrorSurface& surf = dsurf.AtDir(iDir);
-      if(surf.size() != num_srcs) {
-	cerr << "ERROR: Not error segments for sentence " << iSent << " for direction "<< dirs.at(iDir) << endl;
-	abort();
+      if(surf.size() == 0) {
+	cerr << "ERROR: No error segments for sentence " << iSent << " for direction " << iDir << ": " << dirs.at(iDir) << endl;
+	error = true;
       }
     }
+  }
+  if(error) {
+    abort();
   }
 }
 
@@ -258,6 +274,8 @@ int main(int argc, char** argv) {
     unsigned beam_size = conf["beam_size"].as<unsigned>();
     unsigned clusters = conf["clusters"].as<unsigned>();
     DTreeMergeOptimizer opt(opt_type, DEFAULT_LINE_EPSILON, dirs, beam_size);
+
+    dtree.question_ = questions.front(); // split by all tuning sentences
     opt.MergeNode(origin, src_sents, active_sents, sent_surfs, clusters, dtree);
 
   } else {

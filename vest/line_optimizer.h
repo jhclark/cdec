@@ -34,7 +34,7 @@ struct LineOptimizer {
   static double LineOptimize(
      const std::vector<ErrorSurface>& envs,
      const LineOptimizer::ScoreType type,
-     Score** best_score_stats,
+     ScoreP best_score_stats,
      float* best_score,
      const double epsilon = 1.0/65536.0,
      const ScoreP outside_stats = NULL);

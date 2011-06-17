@@ -11,7 +11,7 @@ using namespace std;
 double LineOptimizer::LineOptimize(
     const vector<ErrorSurface>& surfaces,
     const LineOptimizer::ScoreType type,
-    Score** best_score_stats,
+    ScoreP best_score_stats,
     float* best_score,
     const double epsilon,
     const ScoreP outside_stats /*=NULL*/) {
@@ -55,7 +55,7 @@ double LineOptimizer::LineOptimize(
       if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
           (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
         cur_best_score = sco;
-	*best_score_stats = acc;
+	best_score_stats = accp;
 	if (left_edge) {
 	  pos = seg.x - 0.1;
 	  left_edge = false;
@@ -76,7 +76,7 @@ double LineOptimizer::LineOptimize(
   if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
       (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
     cur_best_score = sco;
-    *best_score_stats = acc;
+    best_score_stats = accp;
     if (left_edge) {
       pos = 0;
     } else {

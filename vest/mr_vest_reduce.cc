@@ -49,9 +49,9 @@ int main(int argc, char** argv) {
     if (key != last_key) {
       if (!last_key.empty()) {
 	float score;
-	Score* stats_result; // unused
+	ScoreP stats_result; // unused
 	// x is the position along the line (feature weight) giving the maximum
-        double x = LineOptimizer::LineOptimize(esv, opt_type, &stats_result, &score);
+        double x = LineOptimizer::LineOptimize(esv, opt_type, stats_result, &score);
 	cout << last_key << "|" << x << "|" << score << endl;
       }
       last_key = key;
@@ -81,8 +81,8 @@ int main(int argc, char** argv) {
     // cerr << "ESV=" << esv.size() << endl;
     // for (int i = 0; i < esv.size(); ++i) { cerr << esv[i].size() << endl; }
     float score;
-    Score* stats_result; //unused
-    double x = LineOptimizer::LineOptimize(esv, opt_type, &stats_result, &score);
+    ScoreP stats_result; //unused
+    double x = LineOptimizer::LineOptimize(esv, opt_type, stats_result, &score);
     cout << last_key << "|" << x << "|" << score << endl;
   }
   return 0;
