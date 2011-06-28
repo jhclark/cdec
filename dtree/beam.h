@@ -8,19 +8,49 @@ using namespace std;
 template <typename T>
 class Beam {
  public:
- Beam(size_t sz) : sz_(sz) {}
+ Beam(size_t sz)
+   : sz_(sz),
+     list_(sz+1) {
+    list_.resize(0); // TODO: ???
+    assert(list_.size() == 0);
+  }
+
+  bool WillAccept(double score) const {
+    if(list_.size() >= sz_) {
+      return score > list_.back().GetScore();
+    } else {
+      return true;
+    }
+  }
 
   void Add(const T& t) {
-    if(list_.size() == sz_ && t < list_.back()) {
-      return;
+    if(WillAccept(t.GetScore())) {
+      typename vector<T>::iterator it = list_.begin();
+      while(it != list_.end() && it->GetScore() >= t.GetScore()) {
+	++it;
+      }
+      list_.insert(it, t);
+      if(list_.size() > sz_) {
+	list_.erase(list_.end()-1);
+      }
     }
+  }
 
-    // TODO: XXX: log(n) insertion
-    // instead of this gross n*log(n) business
-    list_.push_back(t);
-    sort(list_.begin(), list_.end());
-    if(list_.size() > sz_) {
-      list_.erase(list_.end()-1);
+  // returns a pointer to the position in the beam
+  T* Add(const double score) {
+    if(WillAccept(score)) {
+      typename vector<T>::iterator it = list_.begin();
+      while(it != list_.end() && it->GetScore() >= score) {
+	++it;
+      }
+      list_.insert(it, T());
+      if(list_.size() > sz_) {
+	list_.erase(list_.end()-1);
+      }
+      // be careful not to invalidate this iterator...
+      return &*it;
+    } else {
+      return NULL;
     }
   }
 

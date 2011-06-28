@@ -11,8 +11,7 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 		      const double line_epsilon,
 		      const vector<SparseVector<double> >& dirs,
 		      const size_t beam_size) // how many clusterings should we keep around?
-    : DTreeOptBase(opt_type, line_epsilon, 0), // min_sents_per_node = 0 here
-      dirs_(dirs),
+    : DTreeOptBase(dirs, opt_type, line_epsilon, 0), // min_sents_per_node = 0 here
       beam_size_(beam_size) {}
 
   void MergeNode(const SparseVector<double>& origin,
@@ -50,7 +49,7 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     // we'll usually be starting at the origin, so dir doesn't matter and step will be 0.0
     int iMatchDir;
     double step;
-    SolveForDirectionAndStep(node.weights_, origin, dirs_, &iMatchDir, &step);
+    SolveForDirectionAndStep(node.weights_, origin, &iMatchDir, &step);
 
     // get the sufficient statistics at that position on the error surface
     vector<bool> active_clusters(cur_clusters);
@@ -71,13 +70,22 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     double opt_update; // unused
     size_t err_verts, dir_err_verts;
     // TODO: Is init.stats_ actually valid as parent stats here?
-    OptimizeNode(dirs_, active_sents, init.surfs_, init.stats_,
+
+    OptimizeNode(active_sents, init.surfs_, init.stats_,
 		 &opt_score, &opt_dir, &opt_update, &dir_err_verts, &err_verts);
-    cerr << "Projected score after optimizing pre-merged node: " << opt_score
+    cerr << "Projected score after optimizing single node: " << opt_score
 	 << " (" << dir_err_verts << " error vertices in best direction, " << err_verts << " total)" << endl;
 
+    // Now optimize all of the splits individually
+    float q_best_score;
+    vector<size_t> q_best_dir_ids(cur_clusters);
+    vector<double> q_best_dir_updates(cur_clusters);
+    OptimizeQuestion(*node.question_, opt_score, src_sents, active_sents, init.stats_, init.surfs_,
+		     &q_best_score, &q_best_dir_ids, &q_best_dir_updates, &init.stats_);
+
+
     // cache sum of stats
-    // and initialize best_dir and best_step to dummy values (what's optimal for the entire node)
+    // and initialize best_dir and best_step to dummy values (what's optimal for optimizing each individually)
     init.all_stats_ = init.stats_.front()->GetZero();
     init.best_dir_.resize(cur_clusters);
     init.best_step_.resize(cur_clusters);
@@ -88,11 +96,13 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     }
 
     shared_ptr<Beam<Clustering> > prev_beam(new Beam<Clustering>(1));
+    assert(prev_beam->Size() == 0);
     prev_beam->Add(init);
-    cout << "k=" << cur_clusters << ": Score=" << opt_score << endl;
+    assert(prev_beam->Size() == 1);
+    cout << "k=" << cur_clusters << ": Score=" << q_best_score << endl;
 
     // k is our target number of clusters for this iteration 
-    for(size_t k = cur_clusters - 1; k >= num_clusters; ++k) {
+    for(size_t k = cur_clusters - 1; k >= num_clusters; --k) {
       // keep a beam of the best merges
       shared_ptr<Beam<Clustering> > beam(new Beam<Clustering>(beam_size_));
 
@@ -103,47 +113,46 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	// previous n-best clustering
 	size_t num_pairs = prev_clust.Size() * (prev_clust.Size() - 1) / 2;
 	cerr << "Trying all " << num_pairs << " pairs for k=" << k << ", " << (iBeam+1) << "th best" << endl;
+	size_t which_pair = 0;
 	for(size_t i=0; i<prev_clust.Size(); ++i) {
-	  for(size_t j=i; j<prev_clust.Size(); ++j) {
-	    size_t which_pair = (i+1)*(j+1);
-	    if(which_pair % 10 == 0) {
+	  for(size_t j=i+1; j<prev_clust.Size(); ++j) {
+	    ++which_pair;
+	    if(which_pair % 1000 == 0) {
 	      float pct = (float) which_pair / (float) num_pairs * 100.0;
 	      cerr << "Progress: " << which_pair << "/" << num_pairs << "(" << pct << "%)" << endl;
 	    }
+	    if(which_pair % 10000 == 0) {
+	      const Clustering& best = beam->Best();
+	      cout << "PROGRESS: k=" << k << ": Best Score=" << best.score_ << "; merged " << best.recent_merge1_ << " " << best.recent_merge2_ << endl;
+	    }
 
 	    // modify the previous clustering by merging clusters i and j
-	    Clustering clust;
-	    Merge(prev_clust, i, j, &clust);
-	    beam->Add(clust);
+	    Merge(prev_clust, i, j, *beam);
 	  }
 	}
-      }
+
+	// TODO: Early termination criterion if we have a full beam and worst member of beam is within epsilon of previous best...
+      } // iBeam
 
       // print best result for this k
-      const Clustering& best = beam->Best();
-      cout << "k=" << k << ": Best Score=" << best.score_ << endl;
-      cout << "k=" << k << ": " << beam->Size() << "-best Score=" << beam->Worst().score_ << endl;
+      for(unsigned i=0; i<beam->Size(); ++i) {
+	const Clustering& ith = beam->At(i);
+	cout << "k=" << k << ": " << (i+1) << "-best Score=" << ith.score_ << "; merged " << ith.recent_merge1_ << " " << ith.recent_merge2_ << endl;
+      }
 
       prev_beam = beam;
-    }
+    } // k
   }
 
  private:
+  // we need the beam to determine if we need to create a new Clustering object
+  // -- an expensive operation
   void Merge(const Clustering& prev_clust,
-	     const unsigned iSrc1,
-	     const unsigned iSrc2,
-	     Clustering* clust) {
-
-    /*
-    // Well... this looks expensive...
-    *clust = prev_clust;
-    // merge the 2 source clusters indices and get the target cluster index
-    const unsigned iTgt = clust->Merge(iSrc1, iSrc2);
-    */
+	     const size_t iSrc1,
+	     const size_t iSrc2,
+	     Beam<Clustering>& beam) {
 
     // accumulate metric stats for sentences outside this DTNode
-    //const ScoreP merged_stats = clust->stats_.at(iTgt);
-    //outside_stats->PlusEquals(*merged_stats, -1);
     ScoreP outside_stats = prev_clust.stats_.front()->GetZero();
     outside_stats->PlusEquals(*prev_clust.all_stats_);
     // subtract off the stats for the clusters we're about to optimize
@@ -152,8 +161,8 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     
     size_t err_verts = 0;
     size_t dir_err_verts = 0;
-
-    clust->score_ = 0.0;
+    size_t iTgt = -1;
+    Clustering* clust = NULL; // create only if we will add it to the beam
     for(size_t dir_id = 0; dir_id < dirs_.size(); ++dir_id) {
 
       const ErrorSurface& e1 = prev_clust.surfs_.at(iSrc1).AtDir(dir_id);
@@ -169,28 +178,36 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 					     line_epsilon_, outside_stats);
       score *= 100;
 
-      // we're not even returning a proper clustering...
-      
-      // TODO: Print information about how well we did with this direction...
-      // TODO: Generalize to best() operator for TER
-      
-      if(score > clust->score_) {
+      if(beam.WillAccept(score) && clust == NULL) {
+	clust = beam.Add(score);
+	assert(clust != NULL);
+	*clust = prev_clust; // expensive!
+	iTgt = clust->Merge(iSrc1, iSrc2);
+	clust->score_ = 0.0;
+      }
+
+      if(clust != NULL && score > clust->score_) {
+	// TODO: Print information about how well we did with this direction...
+	// TODO: Generalize to best() operator for TER
+	// update our current entry, already in the beam
 	clust->score_ = score;
-	/*
 	clust->best_dir_.at(iTgt) = dir_id;
 	clust->best_step_.at(iTgt) = x;
 	clust->stats_.at(iTgt) = stats_result;
 	dir_err_verts = points;
-	*/
       }
       err_verts += points;
     }
-
-    cerr << "Searched " << err_verts << " error vertices overall; " << dir_err_verts << " err vertices in best direction" << endl;
+    if(DEBUG) {
+      if(clust != NULL) {
+	cerr << "Searched " << err_verts << " error vertices overall; " << dir_err_verts << " err vertices in best direction" << endl;
+      } else {
+	cerr << "Searched " << err_verts << " error vertices overall; No entries added to beam" << endl;
+      }
+    }
   }
 
  private:
-  const vector<SparseVector<double> >& dirs_;
   const size_t beam_size_;
 };
 

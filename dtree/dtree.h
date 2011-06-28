@@ -104,10 +104,12 @@ inline ostream& operator<<(ostream& out, const DTNode& dtree) {
 class DTreeOptBase {
 
  public:
-  DTreeOptBase(const LineOptimizer::ScoreType opt_type,
+  DTreeOptBase(const vector<SparseVector<double> >& dirs,
+	       const LineOptimizer::ScoreType opt_type,
 	       const double line_epsilon,
 	       const unsigned min_sents_per_node)
-    : opt_type_(opt_type),
+    : dirs_(dirs),
+      opt_type_(opt_type),
       line_epsilon_(line_epsilon),
       min_sents_per_node_(min_sents_per_node),
       DEBUG(false)
@@ -188,15 +190,14 @@ class DTreeOptBase {
 
   void SolveForDirectionAndStep(const SparseVector<double>& weights,
 				const SparseVector<double>& origin,
-				const vector<SparseVector<double> >& dirs,
 				int* iMatchDir,
 				double* step) {
 
     const double MINF = -numeric_limits<double>::infinity();
     // determine which direction contains our weights
     // if we're at the origin, any direction will match
-    for(unsigned i=0; i < dirs.size(); ++i) {
-      *step = SolveStep(origin, dirs.at(i), weights);
+    for(unsigned i=0; i < dirs_.size(); ++i) {
+      *step = SolveStep(origin, dirs_.at(i), weights);
       if(*step != MINF) {
 	*iMatchDir = i;
 	return;
@@ -267,8 +268,7 @@ class DTreeOptBase {
   // parent_stats_by_sent: the sufficient statistics for each currently selected
   // hypothesis under the parent model.
   // * sent_surfs may actually be clusters rather than sentences during agglomerative clustering
-  void OptimizeNode(const vector<SparseVector<double> > dirs,
-		    const vector<bool>& sent_ids,
+  void OptimizeNode(const vector<bool>& sent_ids,
 		    const vector<DirErrorSurface>& sent_surfs,
 		    const vector<ScoreP>& parent_stats_by_sent,
 		    float* best_score,
@@ -279,7 +279,7 @@ class DTreeOptBase {
 
     assert(sent_ids.size() > 0);
     assert(parent_stats_by_sent.size() == sent_ids.size());
-    assert(dirs.size() == sent_surfs.front().size());
+    assert(dirs_.size() == sent_surfs.front().size());
 
     // accumulate metric stats for sentences outside this DTNode
     ScoreP outside_stats = sent_surfs.front().front().front().delta->GetZero();
@@ -298,7 +298,7 @@ class DTreeOptBase {
     *best_score = 0.0;
     *err_verts = 0;
 
-    for(size_t dir_id = 0; dir_id < dirs.size(); ++dir_id) {
+    for(size_t dir_id = 0; dir_id < dirs_.size(); ++dir_id) {
       
       // accumulate the error surface for this direction
       // for the sentences inside this DTNode
@@ -330,7 +330,71 @@ class DTreeOptBase {
     }
   }
 
+  void OptimizeQuestion(const Question& q,
+			const float best_outside_score,
+			const vector<DTSent>& src_sents,
+			const vector<bool>& active_sents,
+			const vector<ScoreP>& parent_stats_by_sent,
+			vector<DirErrorSurface>& sent_surfs,
+			float* best_score,
+			vector<size_t>* best_dir_ids,
+			vector<double>* best_dir_updates,
+			vector<ScoreP>* opt_stats) {
+
+    // partition the active sentences for this node into sets for
+    // child nodes based on this question
+
+    *opt_stats = parent_stats_by_sent;
+
+    vector<unsigned> counts_by_branch;
+    vector<vector<bool> > active_sents_by_branch; 
+    bool valid = Partition(q, src_sents, active_sents, &counts_by_branch, &active_sents_by_branch);
+    const size_t num_branches = counts_by_branch.size();
+	
+    for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
+      cerr << setw(0) << " branch " << iBranch << " = " << setw(4) << counts_by_branch.at(iBranch);
+    }
+    cerr << setw(0) << ": ";
+    if(!valid) {
+      // too few sentences in one of the sets
+      cerr << "Skipping since it fragments the data too much" << endl;
+    } else {
+      // now optimize each node
+
+      float q_best_score;
+      vector<size_t> q_best_dir_ids(num_branches);
+      vector<double> q_best_dir_updates(num_branches);
+      q_best_dir_ids.resize(num_branches);
+      q_best_dir_updates.resize(num_branches);
+      
+      for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
+	size_t dir_err_verts, err_verts;
+	OptimizeNode(active_sents_by_branch.at(iBranch), sent_surfs, *opt_stats,
+		     &q_best_score, &q_best_dir_ids.at(iBranch), &q_best_dir_updates.at(iBranch), &dir_err_verts, &err_verts);
+	cerr << "(branch: " << iBranch << " " << q_best_score << "; " << dir_err_verts << " err vertices in best direction, " << err_verts << " total) " << endl;
+
+	// grab sufficient stats for sentences we just optimized
+	// so that the optimization of the no branch is slightly
+	// more accurate than the previous branch
+	UpdateStats(q_best_dir_ids.at(iBranch), q_best_dir_updates.at(iBranch),
+		    sent_surfs, active_sents_by_branch.at(iBranch), opt_stats);
+      }
+      const float score_gain = q_best_score - best_outside_score;
+      cerr << " (gain = " << score_gain << ")" << endl;
+
+      // TODO: Generalize to best()
+      // TODO: Check for minimum improvement as part of regularization
+      // TODO: pointer copy instead of vector copy
+      if(q_best_score > *best_score) {
+	*best_score = q_best_score;
+	*best_dir_ids = q_best_dir_ids;
+	*best_dir_updates = q_best_dir_updates;
+      }
+    }
+  }
+
  protected:
+  const vector<SparseVector<double> >& dirs_;
   const LineOptimizer::ScoreType opt_type_;
   const float line_epsilon_;
   const unsigned min_sents_per_node_;

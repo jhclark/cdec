@@ -260,9 +260,9 @@ int main(int argc, char** argv) {
   if(mode == "split") {
     // TODO: verbosity?
     unsigned min_sents_per_node = conf["min_sents"].as<unsigned>();
-    DTreeSplitOptimizer opt(opt_type, DEFAULT_LINE_EPSILON, dt_epsilon, min_sents_per_node, questions);
+    DTreeSplitOptimizer opt(dirs, opt_type, DEFAULT_LINE_EPSILON, dt_epsilon, min_sents_per_node, questions);
 
-    float best_score = opt.GrowTree(origin, dirs, src_sents, sent_surfs, active_sents, dtree);
+    float best_score = opt.GrowTree(origin, src_sents, sent_surfs, active_sents, dtree);
 
     // TODO: Add option for opt.Oracle
     
