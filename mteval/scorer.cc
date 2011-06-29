@@ -433,6 +433,11 @@ float BLEUScore::ComputeScore(vector<float>* precs, float* bp) const {
       float cor_count = correct_ngram_hit_counts[i];
       // smooth bleu
       if (!cor_count) { cor_count = 0.01; }
+      if(cor_count < 0 || hyp_ngram_counts[i] < 0) {
+	cerr << "ERROR: Cannot compute score given stats: " << *this << endl;
+	assert(cor_count >= 0);
+	assert(hyp_ngram_counts[i] >= 0);
+      }
       float lprec = log(cor_count) - log(hyp_ngram_counts[i]);
       if (precs) precs->push_back(exp(lprec));
       log_bleu += lprec;
@@ -497,6 +502,11 @@ void BLEUScore::PlusEquals(const Score& delta) {
   hyp_ngram_counts += d.hyp_ngram_counts;
   ref_len += d.ref_len;
   hyp_len += d.hyp_len;
+
+  for(unsigned i=0; i<correct_ngram_hit_counts.size(); ++i) {
+    assert(correct_ngram_hit_counts[i] >= 0);
+    assert(hyp_ngram_counts[i] >= 0);
+  }
 }
 
 void BLEUScore::TimesEquals(float scale) {

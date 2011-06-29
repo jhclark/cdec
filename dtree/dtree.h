@@ -313,7 +313,7 @@ class DTreeOptBase {
       }
 
       float score;
-      ScoreP stats_result; //unused
+      ScoreP stats_result = outside_stats->GetZero(); //unused
       double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
 					     line_epsilon_, outside_stats);
       score *= 100;
@@ -351,13 +351,16 @@ class DTreeOptBase {
     bool valid = Partition(q, src_sents, active_sents, &counts_by_branch, &active_sents_by_branch);
     const size_t num_branches = counts_by_branch.size();
 	
-    for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
-      cerr << setw(0) << " branch " << iBranch << " = " << setw(4) << counts_by_branch.at(iBranch);
-    }
+    if(num_branches < 10) {
+      for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
+	cerr << setw(0) << " branch " << iBranch << " = " << setw(4) << counts_by_branch.at(iBranch);
+      }
     cerr << setw(0) << ": ";
+    }
+
     if(!valid) {
       // too few sentences in one of the sets
-      cerr << "Skipping since it fragments the data too much" << endl;
+      cerr << "Skipping question since it fragments the data too much" << endl;
     } else {
       // now optimize each node
 
@@ -371,7 +374,7 @@ class DTreeOptBase {
 	size_t dir_err_verts, err_verts;
 	OptimizeNode(active_sents_by_branch.at(iBranch), sent_surfs, *opt_stats,
 		     &q_best_score, &q_best_dir_ids.at(iBranch), &q_best_dir_updates.at(iBranch), &dir_err_verts, &err_verts);
-	cerr << "(branch: " << iBranch << " " << q_best_score << "; " << dir_err_verts << " err vertices in best direction, " << err_verts << " total) " << endl;
+	cerr << "branch: " << iBranch << " " << q_best_score << "; " << dir_err_verts << " err vertices in best direction, " << err_verts << " total" << endl;
 
 	// grab sufficient stats for sentences we just optimized
 	// so that the optimization of the no branch is slightly

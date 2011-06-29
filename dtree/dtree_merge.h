@@ -77,11 +77,10 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	 << " (" << dir_err_verts << " error vertices in best direction, " << err_verts << " total)" << endl;
 
     // Now optimize all of the splits individually
-    float q_best_score;
-    vector<size_t> q_best_dir_ids(cur_clusters);
-    vector<double> q_best_dir_updates(cur_clusters);
+    init.best_dir_.resize(cur_clusters);
+    init.best_step_.resize(cur_clusters);
     OptimizeQuestion(*node.question_, opt_score, src_sents, active_sents, init.stats_, init.surfs_,
-		     &q_best_score, &q_best_dir_ids, &q_best_dir_updates, &init.stats_);
+		     &init.score_, &init.best_dir_, &init.best_step_, &init.stats_);
 
 
     // cache sum of stats
@@ -99,14 +98,15 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     assert(prev_beam->Size() == 0);
     prev_beam->Add(init);
     assert(prev_beam->Size() == 1);
-    cout << "k=" << cur_clusters << ": Score=" << q_best_score << endl;
+    cout << "k=" << cur_clusters << ": Score=" << init.score_ << endl;
 
     // k is our target number of clusters for this iteration 
     for(size_t k = cur_clusters - 1; k >= num_clusters; --k) {
       // keep a beam of the best merges
       shared_ptr<Beam<Clustering> > beam(new Beam<Clustering>(beam_size_));
 
-      for(unsigned iBeam=0; iBeam<prev_beam->Size(); ++iBeam) {
+      bool term_early = false;
+      for(unsigned iBeam=0; iBeam<prev_beam->Size() && !term_early; ++iBeam) {
 	const Clustering& prev_clust = prev_beam->At(iBeam);	
 
 	// iterate over possible pairs of existing "clusters" within this
@@ -114,28 +114,48 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	size_t num_pairs = prev_clust.Size() * (prev_clust.Size() - 1) / 2;
 	cerr << "Trying all " << num_pairs << " pairs for k=" << k << ", " << (iBeam+1) << "th best" << endl;
 	size_t which_pair = 0;
-	for(size_t i=0; i<prev_clust.Size(); ++i) {
-	  for(size_t j=i+1; j<prev_clust.Size(); ++j) {
+	for(size_t i=0; i<prev_clust.Size() && !term_early; ++i) {
+	  for(size_t j=i+1; j<prev_clust.Size() && !term_early; ++j) {
 	    ++which_pair;
+
+	    assert(prev_clust.stats_.at(i) != NULL);
+	    assert(prev_clust.stats_.at(j) != NULL);
+
+	    // modify the previous clustering by merging clusters i and j
+	    Merge(prev_clust, i, j, *beam);
+
 	    if(which_pair % 1000 == 0) {
 	      float pct = (float) which_pair / (float) num_pairs * 100.0;
 	      cerr << "Progress: " << which_pair << "/" << num_pairs << "(" << pct << "%)" << endl;
 	    }
+	    // pessimistic / optimistic loss
+	    float opt_loss = prev_beam->Best().score_ - beam->Best().score_;
+	    float pess_loss = prev_beam->Best().score_ - beam->Worst().score_;
 	    if(which_pair % 10000 == 0) {
 	      const Clustering& best = beam->Best();
-	      cout << "PROGRESS: k=" << k << ": Best Score=" << best.score_ << "; merged " << best.recent_merge1_ << " " << best.recent_merge2_ << endl;
+	      const Clustering& worst = beam->Worst();
+	      cout << "PROGRESS: k=" << k << ": Best Score=" << best.score_
+		   << "; optimistic loss = " << opt_loss
+		   << "; Worst in Beam=" << worst.score_
+		   << "; pessimistic loss = " << pess_loss
+		   << "; best merge " << best.recent_merge1_ << " " << best.recent_merge2_ << endl;
 	    }
 
-	    // modify the previous clustering by merging clusters i and j
-	    Merge(prev_clust, i, j, *beam);
+	    // pessimistic loss versus previous k
+	    float EPSILON_LOSS = 0.01; // in Metric%
+	    if(beam->Size() == beam->Capacity() && pess_loss <= EPSILON_LOSS) {
+	      cout << "Terminating iteration k=" << k
+		   << " early due to pessimistic loss being " << pess_loss
+		   << " (< " << EPSILON_LOSS << ")" << endl;
+	      term_early = true;
+	    }
 	  }
 	}
-
-	// TODO: Early termination criterion if we have a full beam and worst member of beam is within epsilon of previous best...
       } // iBeam
 
       // print best result for this k
       for(unsigned i=0; i<beam->Size(); ++i) {
+	cout << "Finished for k=" << k << endl;
 	const Clustering& ith = beam->At(i);
 	cout << "k=" << k << ": " << (i+1) << "-best Score=" << ith.score_ << "; merged " << ith.recent_merge1_ << " " << ith.recent_merge2_ << endl;
       }
@@ -173,10 +193,12 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
       const size_t points = e1.size() + e2.size();
 
       float score;
-      ScoreP stats_result;
+      ScoreP stats_result = prev_clust.stats_.front()->GetZero();
       double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
 					     line_epsilon_, outside_stats);
       score *= 100;
+      assert(score >= 0.0);
+      assert(score <= 100.0);
 
       if(beam.WillAccept(score) && clust == NULL) {
 	clust = beam.Add(score);
@@ -195,6 +217,8 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	clust->best_step_.at(iTgt) = x;
 	clust->stats_.at(iTgt) = stats_result;
 	dir_err_verts = points;
+
+	assert(clust->stats_.at(iTgt) != NULL);
       }
       err_verts += points;
     }

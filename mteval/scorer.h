@@ -38,6 +38,11 @@ class Score : public boost::intrusive_refcount<Score> {
   virtual void PlusEquals(const Score& rhs) = 0;
   virtual void PlusPartialEquals(const Score& rhs, int oracle_e_cover, int oracle_f_cover, int src_len) = 0;
   virtual void Subtract(const Score& rhs, Score *res) const = 0;
+  // since intrusive refcount is non-copyable
+  virtual void Set(const Score& rhs) {
+    TimesEquals(0);
+    PlusEquals(rhs);
+  }
   virtual ScoreP GetZero() const = 0;
   virtual ScoreP GetOne() const = 0;
   virtual bool IsAdditiveIdentity() const = 0; // returns true if adding this delta

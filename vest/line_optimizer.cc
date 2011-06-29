@@ -39,9 +39,9 @@ double LineOptimizer::LineOptimize(
     acc->PlusEquals(*outside_stats);
   }
 
-  float& cur_best_score = *best_score;
-  cur_best_score = (type == MAXIMIZE_SCORE ?
+  float worst_score = (type == MAXIMIZE_SCORE ?
     -numeric_limits<float>::max() : numeric_limits<float>::max());
+  float cur_best_score = worst_score;
   bool left_edge = true;
   double pos = numeric_limits<double>::quiet_NaN();
 
@@ -50,12 +50,15 @@ double LineOptimizer::LineOptimize(
     const ErrorSegment& seg = **i;
     assert(seg.delta);
     // don't waste time examining extremely small changes in the weights
-    if (seg.x - last_boundary > epsilon) {
+    // provided we have found some reasonable solution already
+    if (cur_best_score == worst_score || seg.x - last_boundary > epsilon) {
       float sco = acc->ComputeScore();
       if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
           (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
         cur_best_score = sco;
-	best_score_stats = accp;
+	assert(cur_best_score >= 0.0);
+	assert(cur_best_score <= 100.0);
+
 	if (left_edge) {
 	  pos = seg.x - 0.1;
 	  left_edge = false;
@@ -70,19 +73,29 @@ double LineOptimizer::LineOptimize(
     }
     // cerr << "x-boundary=" << seg.x << "\n";
     acc->PlusEquals(*seg.delta);
+    float s = acc->ComputeScore();
   }
 
   float sco = acc->ComputeScore();
   if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
       (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
     cur_best_score = sco;
-    best_score_stats = accp;
+    assert(cur_best_score >= 0.0);
+    assert(cur_best_score <= 100.0);
+
     if (left_edge) {
       pos = 0;
     } else {
       pos = last_boundary + 1000.0;
     }
+  } else {
+    assert(cur_best_score != worst_score);
   }
+  assert(cur_best_score >= 0.0);
+  assert(cur_best_score <= 100.0);
+
+  best_score_stats->Set(*accp);
+  *best_score = cur_best_score;
   return pos;
 }
 

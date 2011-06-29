@@ -24,7 +24,10 @@ class DirErrorSurface : public vector<ErrorSurface> {
   void Append(const DirErrorSurface& that) {
     assert(size() == that.size());
     for(size_t iDir=0; iDir < size(); ++iDir) {
-      AtDir(iDir).insert(AtDir(iDir).end(), that.AtDir(iDir).begin(), that.AtDir(iDir).end());
+      ErrorSurface& this_surf = AtDir(iDir);
+      const ErrorSurface& that_surf = that.AtDir(iDir);
+      this_surf.insert(this_surf.end(), that_surf.begin(), that_surf.end());
+      sort(this_surf.begin(), this_surf.end(), ErrorSegmentComp());
     }
   }
 };
@@ -61,7 +64,7 @@ class Clustering {
 
     DirErrorSurface& surf1 = surfs_.at(i);
     const DirErrorSurface& surf2 = surfs_.at(j);
-    surf1.Append(surf2);
+    surf1.Append(surf2); // append includes sort
     surfs_.erase(surfs_.begin() + j);
 
     vector<bool>& clust_i = active_sents_by_branch_.at(i);
@@ -83,7 +86,13 @@ class Clustering {
   }
 
   size_t Size() const {
-    return active_sents_by_branch_.size();
+    size_t sz = active_sents_by_branch_.size();
+    assert(surfs_.size() == sz);
+    assert(counts_.size() == sz);
+    assert(stats_.size() == sz);
+    assert(best_dir_.size() == sz);
+    assert(best_step_.size() == sz);
+    return sz;
   }
 
  public:
@@ -100,7 +109,7 @@ class Clustering {
   vector<unsigned> counts_;
   vector<vector<bool> > active_sents_by_branch_;
   vector<ScoreP> stats_;
-  vector<unsigned> best_dir_;
+  vector<size_t> best_dir_;
   vector<double> best_step_;
 };
 
