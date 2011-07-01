@@ -112,7 +112,7 @@ class DTreeOptBase {
       opt_type_(opt_type),
       line_epsilon_(line_epsilon),
       min_sents_per_node_(min_sents_per_node),
-      DEBUG(false)
+      DEBUG(true)
     {}
 
   // returns whether or not this is a valid partition
@@ -282,7 +282,7 @@ class DTreeOptBase {
     assert(dirs_.size() == sent_surfs.front().size());
 
     // accumulate metric stats for sentences outside this DTNode
-    ScoreP outside_stats = sent_surfs.front().front().front().delta->GetZero();
+    ScoreP outside_stats = parent_stats_by_sent.front()->GetZero();
     const size_t sent_count = sent_ids.size();
     size_t active_count = 0;
     for(size_t i =0; i<sent_count; ++i) {
@@ -297,6 +297,8 @@ class DTreeOptBase {
 
     *best_score = 0.0;
     *err_verts = 0;
+
+    cerr << "OUTSIDE STATS BEFORE: " << *outside_stats << endl;
 
     for(size_t dir_id = 0; dir_id < dirs_.size(); ++dir_id) {
       
@@ -313,7 +315,7 @@ class DTreeOptBase {
       }
 
       float score;
-      ScoreP stats_result = outside_stats->GetZero(); //unused
+      ScoreP stats_result = outside_stats->GetZero(); // unused
       double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
 					     line_epsilon_, outside_stats);
       score *= 100;
@@ -325,6 +327,8 @@ class DTreeOptBase {
 	*best_dir_id = dir_id;
 	*best_dir_update = x;
 	*best_dir_err_verts = points;
+
+	cerr << "NEW BEST: " << score << " " << dir_id << " " << x << endl;
       }
       *err_verts += points;
     }
@@ -336,15 +340,14 @@ class DTreeOptBase {
 			const vector<bool>& active_sents,
 			const vector<ScoreP>& parent_stats_by_sent,
 			vector<DirErrorSurface>& sent_surfs,
+			// the following are updated only if we find a better solution:
 			float* best_score,
 			vector<size_t>* best_dir_ids,
 			vector<double>* best_dir_updates,
-			vector<ScoreP>* opt_stats) {
+			vector<ScoreP>* best_opt_stats) {
 
     // partition the active sentences for this node into sets for
     // child nodes based on this question
-
-    *opt_stats = parent_stats_by_sent;
 
     vector<unsigned> counts_by_branch;
     vector<vector<bool> > active_sents_by_branch; 
@@ -358,6 +361,7 @@ class DTreeOptBase {
     cerr << setw(0) << ": ";
     }
 
+    vector<ScoreP> opt_stats = parent_stats_by_sent;
     if(!valid) {
       // too few sentences in one of the sets
       cerr << "Skipping question since it fragments the data too much" << endl;
@@ -372,18 +376,19 @@ class DTreeOptBase {
       
       for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
 	size_t dir_err_verts, err_verts;
-	OptimizeNode(active_sents_by_branch.at(iBranch), sent_surfs, *opt_stats,
+
+	OptimizeNode(active_sents_by_branch.at(iBranch), sent_surfs, opt_stats,
 		     &q_best_score, &q_best_dir_ids.at(iBranch), &q_best_dir_updates.at(iBranch), &dir_err_verts, &err_verts);
 	cerr << "branch: " << iBranch << " " << q_best_score << "; " << dir_err_verts << " err vertices in best direction, " << err_verts << " total" << endl;
 
 	// grab sufficient stats for sentences we just optimized
-	// so that the optimization of the no branch is slightly
+	// so that the optimization of the next branch is slightly
 	// more accurate than the previous branch
 	UpdateStats(q_best_dir_ids.at(iBranch), q_best_dir_updates.at(iBranch),
-		    sent_surfs, active_sents_by_branch.at(iBranch), opt_stats);
+		    sent_surfs, active_sents_by_branch.at(iBranch), &opt_stats);
       }
       const float score_gain = q_best_score - best_outside_score;
-      cerr << " (gain = " << score_gain << ")" << endl;
+      cerr << "gain for this question = " << score_gain << endl;
 
       // TODO: Generalize to best()
       // TODO: Check for minimum improvement as part of regularization
@@ -392,6 +397,7 @@ class DTreeOptBase {
 	*best_score = q_best_score;
 	*best_dir_ids = q_best_dir_ids;
 	*best_dir_updates = q_best_dir_updates;
+	*best_opt_stats = opt_stats;
       }
     }
   }
