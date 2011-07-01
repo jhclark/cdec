@@ -407,7 +407,16 @@ void BLEUScore::ScoreDetails(string* details) const {
   char buf[2000];
   vector<float> precs(max(N(),4));
   float bp;
-  float bleu = ComputeScore(&precs, &bp);
+  float bleu = 0.0;
+  bool valid_score = true;
+  for(unsigned i=0; i<4; ++i) {
+    if(correct_ngram_hit_counts[i] < 0 || hyp_ngram_counts[i] < 0) {
+      valid_score = false;
+    }
+  }
+  if(valid_score) {
+    bleu = ComputeScore(&precs, &bp);
+  }
   for (int i=N();i<4;++i)
     precs[i]=0.;
   sprintf(buf, "BLEU = %.2f, %.1f|%.1f|%.1f|%.1f %.0f/%.0f|%.0f/%.0f|%.0f/%.0f|%.0f/%.0f (brev=%.3f)",
@@ -434,7 +443,7 @@ float BLEUScore::ComputeScore(vector<float>* precs, float* bp) const {
       // smooth bleu
       if (!cor_count) { cor_count = 0.01; }
       if(cor_count < 0 || hyp_ngram_counts[i] < 0) {
-	cerr << "ERROR: Cannot compute score given stats: " << *this << endl;
+	cerr << "ERROR: Cannot compute score given stats for order " << i << ": " << cor_count << "/" << hyp_ngram_counts[i] << endl;
 	assert(cor_count >= 0);
 	assert(hyp_ngram_counts[i] >= 0);
       }
