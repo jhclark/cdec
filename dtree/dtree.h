@@ -225,6 +225,8 @@ class DTreeOptBase {
     assert(sent_surfs.size() == active_sents.size());
 
     // now collect the sufficient statistics at this weight point for each sentence
+    float neg_inf = -numeric_limits<float>::infinity();
+    float pos = neg_inf;
     for(size_t iSent = 0; iSent < active_sents.size(); ++iSent) {
       if(active_sents.at(iSent)) {
 	assert(sent_surfs.front().size() > iMatchDir);
@@ -234,23 +236,24 @@ class DTreeOptBase {
 	// sort by point on (weight) line where each ErrorSegment induces a change in the error rate
 	sort(sent_surface.begin(), sent_surface.end(), ErrorSegmentComp());
 	
-	if(DEBUG) cerr << "Accumulating sufficient statistics for sentence " << iSent << " along direction " << iMatchDir << " by " << step << endl;
+	if(DEBUG) cerr << "UpdateStats: Accumulating sufficient statistics for sentence " << iSent << " along direction " << iMatchDir << " by " << step << endl;
 	ScoreP accp = sent_surface.front().delta->GetZero();
 	for(ErrorIter it = sent_surface.begin(); it != sent_surface.end(); ++it) {
-	  if(DEBUG) cerr << "stepping: " << *it << endl;
+	  if(DEBUG) cerr << "UpdateStats: stepping: " << *it << endl;
 	  if(it->x <= step) {
 	    // we haven't yet stepped onto the line segment on this surface
 	    // containing the error count of interest
 	    accp->PlusEquals(*it->delta);
-	    if(DEBUG) cerr << "added: " << *accp << endl;
+	    pos = it->x;
+	    if(DEBUG) cerr << "UpdateStats: added: " << *accp << endl;
 	  } else {
 	    if(DEBUG)
-	      cerr << "skipped: " << *accp << endl;
+	      cerr << "UpdateStats: skipped: " << *accp << endl;
 	    else
 	      break;
 	  }
 	}
-	if(DEBUG) cerr << "Stats: " << *accp << endl;
+	if(DEBUG) cerr << "UpdateStats: Found Stats along direction " << iMatchDir << " at position " << pos << ": " << *accp << endl;
 	parent_stats_by_sent->at(iSent) = accp;
       }
     }
@@ -261,16 +264,22 @@ class DTreeOptBase {
     ScoreP node_score = stats.front()->GetZero();
     for(size_t i=0; i<stats.size(); ++i) {
       node_score->PlusEquals(*stats.at(i));
-      if(DEBUG) cerr << "Accumulating node score: " << *node_score << endl;
+      if(DEBUG) cerr << "ScoreStats: Accumulating node score: " << *node_score << endl;
     }
     return node_score->ComputeScore() * 100;
   }
+
   // parent_stats_by_sent: the sufficient statistics for each currently selected
   // hypothesis under the parent model.
   // * sent_surfs may actually be clusters rather than sentences during agglomerative clustering
-  void OptimizeNode(const vector<bool>& sent_ids,
+  //
+  // returns true if a better solution than the prev_best_score is found
+  bool OptimizeNode(const vector<bool>& sent_ids,
 		    const vector<DirErrorSurface>& sent_surfs,
 		    const vector<ScoreP>& parent_stats_by_sent,
+		    const float prev_best_score,
+		    const size_t prev_best_dir,
+		    const float prev_best_pos,
 		    float* best_score,
 		    size_t* best_dir_id,
 		    double* best_dir_update,
@@ -295,10 +304,21 @@ class DTreeOptBase {
       }
     }
 
-    *best_score = 0.0;
-    *err_verts = 0;
+    if(DEBUG) {
+      ScoreP all_stats = parent_stats_by_sent.front()->GetZero();
+      for(size_t i =0; i<sent_count; ++i) {
+	const ScoreP& sent_stats = parent_stats_by_sent.at(i);
+ 	all_stats->PlusEquals(*sent_stats);
+      }
+      cerr << "OptimizeNode: ALL STATS BEFORE: " << *all_stats << endl;
+      cerr << "OptimizeNode: OUTSIDE STATS BEFORE (for " << (sent_count - active_count) << " inactive sentences): " << *outside_stats << endl;
+    }
 
-    cerr << "OUTSIDE STATS BEFORE: " << *outside_stats << endl;
+    bool found_better = false;
+    *best_score = prev_best_score;
+    *best_dir_id = prev_best_dir;
+    *best_dir_update = prev_best_pos;
+    *err_verts = 0;
 
     for(size_t dir_id = 0; dir_id < dirs_.size(); ++dir_id) {
       
@@ -314,6 +334,7 @@ class DTreeOptBase {
 	}
       }
 
+      if(DEBUG) cerr << "OptimizeNode: Running line optimization on " << points << " error vertices... " << endl;
       float score;
       ScoreP stats_result = outside_stats->GetZero(); // unused
       double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
@@ -327,19 +348,24 @@ class DTreeOptBase {
 	*best_dir_id = dir_id;
 	*best_dir_update = x;
 	*best_dir_err_verts = points;
+	found_better = true;
 
-	cerr << "NEW BEST: " << score << " " << dir_id << " " << x << endl;
+	if(DEBUG) cerr << "OptimizeNode: NEW BEST: " << score << " " << dir_id << " " << x << " (gain over prev 'branch' = " << (*best_score - prev_best_score) << ")" << endl;
       }
       *err_verts += points;
     }
+    return found_better;
   }
 
+  // TODO: Refactor this method signature to induce less bleeding from the eyes
   void OptimizeQuestion(const Question& q,
-			const float best_outside_score,
 			const vector<DTSent>& src_sents,
 			const vector<bool>& active_sents,
 			const vector<ScoreP>& parent_stats_by_sent,
 			vector<DirErrorSurface>& sent_surfs,
+			const float prev_best_score,
+			const size_t prev_best_dir,
+			const float prev_best_pos,
 			// the following are updated only if we find a better solution:
 			float* best_score,
 			vector<size_t>* best_dir_ids,
@@ -354,11 +380,13 @@ class DTreeOptBase {
     bool valid = Partition(q, src_sents, active_sents, &counts_by_branch, &active_sents_by_branch);
     const size_t num_branches = counts_by_branch.size();
 	
+    if(DEBUG) cerr << "OptimizeQuestion: Optmizing question " << q << " with " << num_branches << " branches. prev_best_score = " << prev_best_score << endl;
+
     if(num_branches < 10) {
       for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
 	cerr << setw(0) << " branch " << iBranch << " = " << setw(4) << counts_by_branch.at(iBranch);
       }
-    cerr << setw(0) << ": ";
+      cerr << setw(0) << ": ";
     }
 
     vector<ScoreP> opt_stats = parent_stats_by_sent;
@@ -377,9 +405,15 @@ class DTreeOptBase {
       for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
 	size_t dir_err_verts, err_verts;
 
-	OptimizeNode(active_sents_by_branch.at(iBranch), sent_surfs, opt_stats,
-		     &q_best_score, &q_best_dir_ids.at(iBranch), &q_best_dir_updates.at(iBranch), &dir_err_verts, &err_verts);
-	cerr << "branch: " << iBranch << " " << q_best_score << "; " << dir_err_verts << " err vertices in best direction, " << err_verts << " total" << endl;
+	bool found_better = OptimizeNode(active_sents_by_branch.at(iBranch), sent_surfs, opt_stats,
+					 q_best_score, prev_best_dir, prev_best_pos,
+					 &q_best_score, &q_best_dir_ids.at(iBranch),
+					 &q_best_dir_updates.at(iBranch), &dir_err_verts, &err_verts);
+
+	const float branch_gain = q_best_score - prev_best_score;
+	cerr << "branch: " << iBranch << " " << q_best_score << "; " << dir_err_verts << " err vertices in best direction, " << err_verts << " total (gain=" << branch_gain << ")" << endl;
+
+	if(DEBUG) cerr << "OptimizeQuestion: Best direction was " << q_best_dir_ids.at(iBranch) << " at position " << q_best_dir_updates.at(iBranch) << endl;
 
 	// grab sufficient stats for sentences we just optimized
 	// so that the optimization of the next branch is slightly
@@ -387,7 +421,7 @@ class DTreeOptBase {
 	UpdateStats(q_best_dir_ids.at(iBranch), q_best_dir_updates.at(iBranch),
 		    sent_surfs, active_sents_by_branch.at(iBranch), &opt_stats);
       }
-      const float score_gain = q_best_score - best_outside_score;
+      const float score_gain = q_best_score - prev_best_score;
       cerr << "gain for this question = " << score_gain << endl;
 
       // TODO: Generalize to best()

@@ -71,7 +71,7 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     size_t err_verts, dir_err_verts;
     // TODO: Is init.stats_ actually valid as parent stats here?
 
-    OptimizeNode(active_sents, init.surfs_, init.stats_,
+    OptimizeNode(active_sents, init.surfs_, init.stats_, 0.0, 0, 0.0,
 		 &opt_score, &opt_dir, &opt_update, &dir_err_verts, &err_verts);
     cerr << "Projected score after optimizing single node: " << opt_score
 	 << " (" << dir_err_verts << " error vertices in best direction, " << err_verts << " total)" << endl;
@@ -79,7 +79,8 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     // Now optimize all of the splits individually
     init.best_dir_.resize(cur_clusters);
     init.best_step_.resize(cur_clusters);
-    OptimizeQuestion(*node.question_, opt_score, src_sents, active_sents, init.stats_, init.surfs_,
+    OptimizeQuestion(*node.question_, src_sents, active_sents, init.stats_, init.surfs_,
+		     opt_score, opt_dir, opt_update,
 		     &init.score_, &init.best_dir_, &init.best_step_, &init.stats_);
 
 
@@ -192,6 +193,7 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
       esv.push_back(e2);
       const size_t points = e1.size() + e2.size();
 
+      if(DEBUG) cerr << "dtree_merge: Running line optimization on " << points << " error vertices... " << endl;
       float score;
       ScoreP stats_result = prev_clust.stats_.front()->GetZero();
       double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,

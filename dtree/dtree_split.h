@@ -70,7 +70,7 @@ class DTreeSplitOptimizer : protected DTreeOptBase {
       size_t n_best_dir_id;
       double n_best_dir_update;
       size_t n_dir_err_verts, n_err_verts;
-      OptimizeNode(active_sents, sent_surfs, parent_stats_by_sent,
+      OptimizeNode(active_sents, sent_surfs, parent_stats_by_sent, before_score, iMatchDir, step,
 		   &n_best_score, &n_best_dir_id, &n_best_dir_update, &n_dir_err_verts, &n_err_verts);
       cerr << "Projected score after optimizing pre-split node: " << n_best_score
 	   << " (" << n_dir_err_verts << " error vertices, " << n_err_verts << ")" << endl;
@@ -90,7 +90,8 @@ class DTreeSplitOptimizer : protected DTreeOptBase {
 	     << setw(0) << " ::";
 
 	float q_best_score;
-	OptimizeQuestion(q, n_best_score, src_sents, active_sents, opt_stats, sent_surfs,
+	OptimizeQuestion(q, src_sents, active_sents, opt_stats, sent_surfs,
+			 n_best_score, n_best_dir_id, n_best_dir_update,
 			 &q_best_score, &best_dir_ids, &best_dir_updates, &opt_stats);
 	if(q_best_score > best_score) {
 	  best_score = q_best_score;
