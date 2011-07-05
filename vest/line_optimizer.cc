@@ -16,9 +16,12 @@ double LineOptimizer::LineOptimize(
     const double epsilon,
     const ScoreP outside_stats /*=NULL*/) {
 
+  // TODO: Debugging logger
+  bool DEBUG = true;
+
   // cerr << "MIN=" << MINIMIZE_SCORE << " MAX=" << MAXIMIZE_SCORE << "  MINE=" << type << endl;
   // concatenate error surfaces
-  // CHRIS: Why is this a vector of ErrorIter's (ErrorSegment pointers) instead of ErrorSegments? -JON
+  // CHRIS: Using ErrorIter as pointer to ErrorSegment's so that we don't have to copy? ErrorSegments aren't that big though
   vector<ErrorIter> all_ints;
   for (vector<ErrorSurface>::const_iterator i = surfaces.begin();
        i != surfaces.end(); ++i) {
@@ -46,18 +49,40 @@ double LineOptimizer::LineOptimize(
   bool left_edge = true;
   float first_boundary = neg_inf;
   double pos = numeric_limits<double>::quiet_NaN();
-  cerr << "INIT POS " << pos << endl;
+  if(DEBUG) cerr << "LineOptimizer: INIT POS " << pos << endl;
 
+  vector<ErrorIter>::iterator next_i = all_ints.begin();
   for (vector<ErrorIter>::iterator i = all_ints.begin();
        i != all_ints.end(); ++i) {
+
     const ErrorSegment& seg = **i;
     assert(seg.delta);
+    acc->PlusEquals(*seg.delta);
+
+    // merge stats that occur at the same boundary vertex
+    // if the next segment has the same position along this line, skip this segment (after updating acc)
+    ++next_i;
+    if(DEBUG) cerr << "LineOptimizer: VERTEX: " << seg.x << endl;
+    if (next_i != all_ints.end()) {
+      const ErrorSegment& next_seg = **next_i;
+      if (seg.x == next_seg.x) {
+	if(DEBUG) cerr << "LineOptimizer: SKIP DUE TO MERGE: " << seg.x << endl;
+	continue;
+      } else {
+	if(DEBUG) cerr << "LineOptimizer: NO MERGE: " << seg.x << endl;
+      }
+    }    
+
+    if (first_boundary == neg_inf && !isnan(pos) && !isinf(pos)) {
+      if(DEBUG) cerr << "LineOptimizer: FOUND FIRST (NON-INF) BOUNDARY: " << seg.x << endl;
+      first_boundary = seg.x;
+    }
+
     // don't waste time examining extremely small changes in the weights
     // unless this is our first time through this loop (i.e. score is worst_score)
-    // or we don't yet know where our first non-inf boundary is
-    if (cur_best_score == worst_score
-	|| first_boundary == neg_inf
-	|| seg.x - last_boundary > epsilon) {
+    // or unless we were just at the left edge
+    if(last_boundary == neg_inf || cur_best_score == worst_score || seg.x - last_boundary > epsilon) {
+
       float sco = acc->ComputeScore();
       if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
           (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
@@ -65,28 +90,37 @@ double LineOptimizer::LineOptimize(
 	assert(cur_best_score >= 0.0);
 	assert(cur_best_score <= 100.0);
 
-	if (left_edge) {
+	// CHRIS: does left_edge mean the same thing as -inf?
+	// assuming so for now...
+	if (seg.x == neg_inf) {
+	  pos = neg_inf;
+	  if(DEBUG) cerr << "LineOptimizer: NEW BEST: LEFT EDGE POS: " << pos << endl;
+	  assert(!isnan(pos));
+	} else if (last_boundary == neg_inf) {
 	  pos = seg.x - 0.1;
-	  cerr << "LEFT EDGE POS: " << pos << endl;
+	  if(DEBUG) cerr << "LineOptimizer: NEW BEST: NEAR LEFT EDGE POS: " << pos << endl;
+	  assert(!isnan(pos));
+	  assert(!isinf(pos));
+
 	  left_edge = false;
 	} else {
-	  // last_boundary is -inf, subtracting from it will result in NaN
+	  // subtracting -inf (possible value of last_boundary) will result in NaN
+	  // but we guarded for this above
 	  pos = last_boundary + (seg.x - last_boundary) / 2;
-	  cerr << "NON LEFT EDGE POS: " << pos << " " << last_boundary << " " << seg.x << endl;
+	  if(DEBUG) cerr << "LineOptimizer: NEW BEST: NON LEFT EDGE POS: " << pos << " " << last_boundary << " " << seg.x << endl;
+	  assert(!isnan(pos));
 	  assert(!isinf(pos));
-	  if(first_boundary == neg_inf) {
-	    first_boundary = pos;
-	  }
 	}
-	assert(!isnan(pos));
-	cerr << "UPD POS: NEW BEST: " << pos << "  (score=" << cur_best_score << ")\n";
+	if(DEBUG) cerr << "LineOptimizer: (NEW BEST): UPD POS: NEW BEST: " << pos << "  (score=" << cur_best_score << ")\n";
       }
       // string xx; acc->ScoreDetails(&xx); cerr << "---- " << xx;
       // cerr << "---- s=" << sco << "\n";
+      // keep track of the last boundary we actually evaluated
       last_boundary = seg.x;
+    } else {
+      if(DEBUG) cerr << "LineOptimizer: SKIPPED DUE TO LAST_BOUNDARY < EPSILON: " << seg.x << endl;
     }
     // cerr << "x-boundary=" << seg.x << "\n";
-    acc->PlusEquals(*seg.delta);
   }
 
   float sco = acc->ComputeScore();
@@ -103,8 +137,10 @@ double LineOptimizer::LineOptimize(
       pos = 0;
     } else {
       pos = last_boundary + 1000.0;
+      assert(!isinf(pos));
+      assert(!isnan(pos));
     }
-    cerr << "FIN POS " << pos << " " << sco << endl;
+    if(DEBUG) cerr << "LineOptimizer: FIN POS " << pos << " " << sco << endl;
   } else {
     assert(cur_best_score != worst_score);
   }
@@ -114,12 +150,21 @@ double LineOptimizer::LineOptimize(
   // -inf indicates that the best score is just to the left of the first boundary
   if(pos == neg_inf) {
     // TODO: How will this interact with UpdateStat?
-    pos = first_boundary - 1000.0;
+    if(first_boundary == neg_inf) {
+      // this should only happen in pathological cases where we're only dealing
+      // with around 1 sentence having very little variety, but returning -inf
+      // could cause Terrible Things to happen in the decoder, so just disable the feature
+      pos = 0.0;
+    } else {
+      pos = first_boundary - 1000.0;
+    }
+    if(DEBUG) cerr << "LineOptimizer: CORRECTED -INF BOUNDARY TO: " << pos << endl;
+    assert(!isnan(pos));
   }
 
   best_score_stats->Set(*accp);
   *best_score = cur_best_score;
-  assert(!isnan(pos)); // <----------------------------
+  assert(!isnan(pos));
   assert(!isinf(pos)); // -inf is not acceptable even as left edge
   return pos;
 }
