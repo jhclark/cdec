@@ -112,7 +112,7 @@ class DTreeOptBase {
       opt_type_(opt_type),
       line_epsilon_(line_epsilon),
       min_sents_per_node_(min_sents_per_node),
-      DEBUG(true)
+      DEBUG(false)
     {}
 
   // returns whether or not this is a valid partition

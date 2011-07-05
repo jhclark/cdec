@@ -194,6 +194,7 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
       const size_t points = e1.size() + e2.size();
 
       if(DEBUG) cerr << "dtree_merge: Running line optimization on " << points << " error vertices in direction " << dir_id << "... " << endl;
+      if(DEBUG) cerr << "dtree_merge: outside_stats are " << *outside_stats << endl;
       float score;
       ScoreP stats_result = prev_clust.stats_.front()->GetZero();
       double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
@@ -206,6 +207,11 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	clust = beam.Add(score);
 	assert(clust != NULL);
 	*clust = prev_clust; // expensive!
+
+	clust->all_stats_ = stats_result->GetZero();
+	clust->all_stats_->PlusEquals(*stats_result); // TODO: Move this into copy constructor?
+	if(DEBUG) cerr << "dtree_merge: Assigned clust->all_stats_ as " << *clust->all_stats_ << endl;
+
 	iTgt = clust->Merge(iSrc1, iSrc2);
 	clust->score_ = 0.0;
       }
@@ -217,7 +223,12 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	clust->score_ = score;
 	clust->best_dir_.at(iTgt) = dir_id;
 	clust->best_step_.at(iTgt) = x;
-	clust->stats_.at(iTgt) = stats_result;
+
+	// get exactly the stats used for this merge
+	clust->stats_.at(iTgt) = stats_result->GetZero();
+	clust->stats_.at(iTgt)->PlusEquals(*stats_result);
+	clust->stats_.at(iTgt)->PlusEquals(*outside_stats, -1);
+
 	dir_err_verts = points;
 
 	assert(clust->stats_.at(iTgt) != NULL);
@@ -226,9 +237,9 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     }
     if(DEBUG) {
       if(clust != NULL) {
-	cerr << "Searched " << err_verts << " error vertices overall; " << dir_err_verts << " err vertices in best direction" << endl;
+	cerr << "dtree_merge: Searched " << err_verts << " error vertices overall; " << dir_err_verts << " err vertices in best direction" << endl;
       } else {
-	cerr << "Searched " << err_verts << " error vertices overall; No entries added to beam" << endl;
+	cerr << "dtree_merge: Searched " << err_verts << " error vertices overall; No entries added to beam" << endl;
       }
     }
   }
