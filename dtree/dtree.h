@@ -334,7 +334,7 @@ class DTreeOptBase {
 	}
       }
 
-      if(DEBUG) cerr << "OptimizeNode: Running line optimization on " << points << " error vertices... " << endl;
+      if(DEBUG) cerr << "OptimizeNode: Running line optimization on " << points << " error vertices in direction " << dir_id << "... " << endl;
       float score;
       ScoreP stats_result = outside_stats->GetZero(); // unused
       double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
@@ -350,7 +350,7 @@ class DTreeOptBase {
 	*best_dir_err_verts = points;
 	found_better = true;
 
-	if(DEBUG) cerr << "OptimizeNode: NEW BEST: " << score << " " << dir_id << " " << x << " (gain over prev 'branch' = " << (*best_score - prev_best_score) << ")" << endl;
+	if(DEBUG) cerr << "OptimizeNode: NEW BEST: " << score << " " << dir_id << " " << x << " (gain over prev 'branch' = " << (*best_score - prev_best_score) << ") :: STATS = " << *stats_result << endl;
       }
       *err_verts += points;
     }

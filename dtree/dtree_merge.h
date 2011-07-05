@@ -193,7 +193,7 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
       esv.push_back(e2);
       const size_t points = e1.size() + e2.size();
 
-      if(DEBUG) cerr << "dtree_merge: Running line optimization on " << points << " error vertices... " << endl;
+      if(DEBUG) cerr << "dtree_merge: Running line optimization on " << points << " error vertices in direction " << dir_id << "... " << endl;
       float score;
       ScoreP stats_result = prev_clust.stats_.front()->GetZero();
       double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
