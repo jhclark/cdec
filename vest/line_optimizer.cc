@@ -41,17 +41,23 @@ double LineOptimizer::LineOptimize(
 
   float worst_score = (type == MAXIMIZE_SCORE ?
     -numeric_limits<float>::max() : numeric_limits<float>::max());
+  float neg_inf = -numeric_limits<float>::infinity();
   float cur_best_score = worst_score;
   bool left_edge = true;
+  float first_boundary = neg_inf;
   double pos = numeric_limits<double>::quiet_NaN();
+  cerr << "INIT POS " << pos << endl;
 
   for (vector<ErrorIter>::iterator i = all_ints.begin();
        i != all_ints.end(); ++i) {
     const ErrorSegment& seg = **i;
     assert(seg.delta);
     // don't waste time examining extremely small changes in the weights
-    // provided we have found some reasonable solution already
-    if (cur_best_score == worst_score || seg.x - last_boundary > epsilon) {
+    // unless this is our first time through this loop (i.e. score is worst_score)
+    // or we don't yet know where our first non-inf boundary is
+    if (cur_best_score == worst_score
+	|| first_boundary == neg_inf
+	|| seg.x - last_boundary > epsilon) {
       float sco = acc->ComputeScore();
       if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
           (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
@@ -61,11 +67,19 @@ double LineOptimizer::LineOptimize(
 
 	if (left_edge) {
 	  pos = seg.x - 0.1;
+	  cerr << "LEFT EDGE POS: " << pos << endl;
 	  left_edge = false;
 	} else {
+	  // last_boundary is -inf, subtracting from it will result in NaN
 	  pos = last_boundary + (seg.x - last_boundary) / 2;
+	  cerr << "NON LEFT EDGE POS: " << pos << " " << last_boundary << " " << seg.x << endl;
+	  assert(!isinf(pos));
+	  if(first_boundary == neg_inf) {
+	    first_boundary = pos;
+	  }
 	}
-	// cerr << "NEW BEST: " << pos << "  (score=" << cur_best_score << ")\n";
+	assert(!isnan(pos));
+	cerr << "UPD POS: NEW BEST: " << pos << "  (score=" << cur_best_score << ")\n";
       }
       // string xx; acc->ScoreDetails(&xx); cerr << "---- " << xx;
       // cerr << "---- s=" << sco << "\n";
@@ -73,7 +87,6 @@ double LineOptimizer::LineOptimize(
     }
     // cerr << "x-boundary=" << seg.x << "\n";
     acc->PlusEquals(*seg.delta);
-    float s = acc->ComputeScore();
   }
 
   float sco = acc->ComputeScore();
@@ -84,18 +97,30 @@ double LineOptimizer::LineOptimize(
     assert(cur_best_score <= 100.0);
 
     if (left_edge) {
+      // CHRIS: when would this ever be true?
+      // shouldn't score always be better than the Float.MIN_VALUE?
+      // or does this indicate there were no points in the error surface?
       pos = 0;
     } else {
       pos = last_boundary + 1000.0;
     }
+    cerr << "FIN POS " << pos << " " << sco << endl;
   } else {
     assert(cur_best_score != worst_score);
   }
   assert(cur_best_score >= 0.0);
   assert(cur_best_score <= 100.0);
 
+  // -inf indicates that the best score is just to the left of the first boundary
+  if(pos == neg_inf) {
+    // TODO: How will this interact with UpdateStat?
+    pos = first_boundary - 1000.0;
+  }
+
   best_score_stats->Set(*accp);
   *best_score = cur_best_score;
+  assert(!isnan(pos)); // <----------------------------
+  assert(!isinf(pos)); // -inf is not acceptable even as left edge
   return pos;
 }
 

@@ -9,8 +9,8 @@
 class Score;
 
 struct ErrorSegment {
-  double x;
-  ScoreP delta;
+  double x; // left boundary of this segment for the current feature's weight
+  ScoreP delta; // change in suffucient stats / metric store at that boundary
   ErrorSegment() : x(0), delta(NULL) {}
 };
 
