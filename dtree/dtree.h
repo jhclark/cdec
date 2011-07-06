@@ -23,6 +23,7 @@ namespace po = boost::program_options;
 #include "filelib.h"
 #include "stringlib.h"
 #include "weights.h"
+#include "vector_util.h"
 
 #include "question.h"
 #include "cluster.h"
@@ -389,7 +390,6 @@ class DTreeOptBase {
       cerr << setw(0) << ": ";
     }
 
-    vector<ScoreP> opt_stats = parent_stats_by_sent;
     if(!valid) {
       // too few sentences in one of the sets
       cerr << "Skipping question since it fragments the data too much" << endl;
@@ -397,6 +397,7 @@ class DTreeOptBase {
       // now optimize each node
 
       float q_best_score;
+      vector<ScoreP> q_opt_stats = parent_stats_by_sent;
       vector<size_t> q_best_dir_ids(num_branches);
       vector<double> q_best_dir_updates(num_branches);
       q_best_dir_ids.resize(num_branches);
@@ -405,7 +406,7 @@ class DTreeOptBase {
       for(unsigned iBranch=0; iBranch<num_branches; ++iBranch) {
 	size_t dir_err_verts, err_verts;
 
-	bool found_better = OptimizeNode(active_sents_by_branch.at(iBranch), sent_surfs, opt_stats,
+	bool found_better = OptimizeNode(active_sents_by_branch.at(iBranch), sent_surfs, q_opt_stats,
 					 q_best_score, prev_best_dir, prev_best_pos,
 					 &q_best_score, &q_best_dir_ids.at(iBranch),
 					 &q_best_dir_updates.at(iBranch), &dir_err_verts, &err_verts);
@@ -419,7 +420,7 @@ class DTreeOptBase {
 	// so that the optimization of the next branch is slightly
 	// more accurate than the previous branch
 	UpdateStats(q_best_dir_ids.at(iBranch), q_best_dir_updates.at(iBranch),
-		    sent_surfs, active_sents_by_branch.at(iBranch), &opt_stats);
+		    sent_surfs, active_sents_by_branch.at(iBranch), &q_opt_stats);
       }
       const float score_gain = q_best_score - prev_best_score;
       cerr << "gain for this question = " << score_gain << endl;
@@ -431,7 +432,7 @@ class DTreeOptBase {
 	*best_score = q_best_score;
 	*best_dir_ids = q_best_dir_ids;
 	*best_dir_updates = q_best_dir_updates;
-	*best_opt_stats = opt_stats;
+	*best_opt_stats = q_opt_stats;
       }
     }
   }

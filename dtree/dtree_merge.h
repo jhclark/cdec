@@ -63,7 +63,7 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     // now that we know where we stand on the error surface,
     // get the current score of this clustering before optimization
     const float before_score = ScoreStats(init.stats_);
-    cout << "Score before optimization: " << before_score << endl;
+    cerr << "Score before optimization: " << before_score << endl;
 
     float opt_score;
     size_t opt_dir; // unused
@@ -85,21 +85,20 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 
 
     // cache sum of stats
-    // and initialize best_dir and best_step to dummy values (what's optimal for optimizing each individually)
     init.all_stats_ = init.stats_.front()->GetZero();
-    init.best_dir_.resize(cur_clusters);
-    init.best_step_.resize(cur_clusters);
     for(size_t i=0; i<cur_clusters; ++i) {
       init.all_stats_->PlusEquals(*init.stats_.at(i));
-      init.best_dir_.at(i) = opt_dir;
-      init.best_step_.at(i) = opt_update;
     }
 
     shared_ptr<Beam<Clustering> > prev_beam(new Beam<Clustering>(1));
     assert(prev_beam->Size() == 0);
     prev_beam->Add(init);
     assert(prev_beam->Size() == 1);
-    cout << "k=" << cur_clusters << ": Score=" << init.score_ << endl;
+
+    cout << "Init:" << endl;
+    cout << init << endl;
+
+    cerr << "k=" << cur_clusters << ": Score=" << init.score_ << endl;
 
     // k is our target number of clusters for this iteration 
     for(size_t k = cur_clusters - 1; k >= num_clusters; --k) {
@@ -135,7 +134,7 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	    if(which_pair % 10000 == 0) {
 	      const Clustering& best = beam->Best();
 	      const Clustering& worst = beam->Worst();
-	      cout << "PROGRESS: k=" << k << ": Best Score=" << best.score_
+	      cerr << "PROGRESS: k=" << k << ": Best Score=" << best.score_
 		   << "; optimistic loss = " << opt_loss
 		   << "; Worst in Beam=" << worst.score_
 		   << "; pessimistic loss = " << pess_loss
@@ -145,7 +144,7 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	    // pessimistic loss versus previous k
 	    float EPSILON_LOSS = 0.01; // in Metric%
 	    if(beam->Size() == beam->Capacity() && pess_loss <= EPSILON_LOSS) {
-	      cout << "Terminating iteration k=" << k
+	      cerr << "Terminating iteration k=" << k
 		   << " early due to pessimistic loss being " << pess_loss
 		   << " (< " << EPSILON_LOSS << ")" << endl;
 	      term_early = true;
@@ -156,9 +155,13 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 
       // print best result for this k
       for(unsigned i=0; i<beam->Size(); ++i) {
-	cout << "Finished for k=" << k << endl;
 	const Clustering& ith = beam->At(i);
-	cout << "k=" << k << ": " << (i+1) << "-best Score=" << ith.score_ << "; merged " << ith.recent_merge1_ << " " << ith.recent_merge2_ << endl;
+	cerr << "Finished for k=" << k << endl;
+
+	cout << (i+1) << "-best:" << endl;
+	cout << ith << endl;
+
+	cerr << "k=" << k << ": " << (i+1) << "-best Score=" << ith.score_ << "; merged " << ith.recent_merge1_ << " " << ith.recent_merge2_ << endl;
       }
 
       prev_beam = beam;
@@ -211,6 +214,9 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	clust->all_stats_ = stats_result->GetZero();
 	clust->all_stats_->PlusEquals(*stats_result); // TODO: Move this into copy constructor?
 	if(DEBUG) cerr << "dtree_merge: Assigned clust->all_stats_ as " << *clust->all_stats_ << endl;
+
+	// also move this into the copy constructor?
+	
 
 	iTgt = clust->Merge(iSrc1, iSrc2);
 	clust->score_ = 0.0;

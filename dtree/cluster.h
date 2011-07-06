@@ -113,4 +113,22 @@ class Clustering {
   vector<double> best_step_;
 };
 
+inline ostream& operator<<(ostream& out, const Clustering& c) {
+  for(unsigned k=0; k<c.Size(); ++k) {
+    out << "K=" << c.Size() << "; #" << k << ":";
+
+    const vector<bool>& sents = c.active_sents_by_branch_.at(k);
+    const size_t dir = c.best_dir_.at(k);
+    const double step = c.best_step_.at(k);
+    for(unsigned i=0; i<sents.size(); ++i) {
+      if(sents.at(i)) {
+	out << " " << i;
+      }
+    }
+    
+    out << "; dir=" << dir << " step=" << step << endl;
+  }
+  return out;
+}
+
 #endif
