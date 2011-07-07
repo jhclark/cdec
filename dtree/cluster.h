@@ -57,6 +57,10 @@ class Clustering {
     counts_.at(i) += counts_.at(j);
     counts_.erase(counts_.begin() + j);
 
+    // create new Score pointer to hold result of adding stats
+    ScoreP tmp = stats_.at(i);
+    stats_.at(i) = stats_.front()->GetZero();
+    stats_.at(i)->PlusEquals(*tmp);
     stats_.at(i)->PlusEquals(*stats_.at(j));
     stats_.erase(stats_.begin() + j);
       
