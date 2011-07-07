@@ -24,6 +24,7 @@ namespace po = boost::program_options;
 #include "stringlib.h"
 #include "weights.h"
 #include "vector_util.h"
+#include "exception.h"
 
 #include "question.h"
 #include "cluster.h"
@@ -301,6 +302,7 @@ class DTreeOptBase {
 	++active_count;
       } else {
 	const ScoreP& sent_stats = parent_stats_by_sent.at(i);
+	if(!sent_stats->HasValidStats()) UTIL_THROW(IllegalStateException, "Invalid sufficient statistics for parent sentence " << i << ": " << *sent_stats);
  	outside_stats->PlusEquals(*sent_stats);
       }
     }
@@ -338,8 +340,14 @@ class DTreeOptBase {
       if(DEBUG) cerr << "OptimizeNode: Running line optimization on " << points << " error vertices in direction " << dir_id << "... " << endl;
       float score;
       ScoreP stats_result = outside_stats->GetZero(); // unused
-      double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
-					     line_epsilon_, outside_stats);
+      double x;
+      try {
+	x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
+					       line_epsilon_, outside_stats);
+      } catch(IllegalStateException& e) {
+	e << "\n OptimizeNode(): Illegal State while running line optimizer in direction " << dir_id << " on " << points << " error vertices";
+	throw;
+      }
       score *= 100;
 
       // TODO: Print information about how well we did with this direction...

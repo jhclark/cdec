@@ -43,6 +43,10 @@ class Score : public boost::intrusive_refcount<Score> {
     TimesEquals(0);
     PlusEquals(rhs);
   }
+  virtual bool HasValidStats() const {
+    // TODO: Don't provide default implementation
+    return true;
+  }
   virtual ScoreP GetZero() const = 0;
   virtual ScoreP GetOne() const = 0;
   virtual bool IsAdditiveIdentity() const = 0; // returns true if adding this delta

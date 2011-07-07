@@ -5,6 +5,7 @@
 
 #include "sparse_vector.h"
 #include "scorer.h"
+#include "exception.h"
 
 using namespace std;
 
@@ -17,7 +18,7 @@ double LineOptimizer::LineOptimize(
     const ScoreP outside_stats /*=NULL*/) {
 
   // TODO: Debugging logger
-  bool DEBUG = true;
+  bool DEBUG = false;
 
   // cerr << "MIN=" << MINIMIZE_SCORE << " MAX=" << MAXIMIZE_SCORE << "  MINE=" << type << endl;
   // concatenate error surfaces
@@ -54,97 +55,117 @@ double LineOptimizer::LineOptimize(
   // NOTE: Was originally 0.1 for left edge and 1000 for right edge
   const float EXPLORE_DIST = 1.0;
 
-  vector<ErrorIter>::iterator next_i = all_ints.begin();
-  for (vector<ErrorIter>::iterator i = all_ints.begin();
-       i != all_ints.end(); ++i) {
+  try {
+    vector<ErrorIter>::iterator next_i = all_ints.begin();
+    for (vector<ErrorIter>::iterator i = all_ints.begin();
+	 i != all_ints.end(); ++i) {
 
-    const ErrorSegment& seg = **i;
-    if(DEBUG) cerr << "LineOptimizer: VERTEX: " << seg.x << endl;
-    assert(seg.delta);
+      const ErrorSegment& seg = **i;
+      if(DEBUG) cerr << "LineOptimizer: VERTEX: " << seg.x << endl;
+      assert(seg.delta);
+      
+      // merge stats that occur at the same boundary vertex
+      // if the next segment has the same position along this line, skip this segment (after updating acc)
+      ++next_i;
+      if (next_i != all_ints.end() && seg.x == (*next_i)->x) {
+	if(DEBUG) cerr << "LineOptimizer: SKIP DUE TO MERGE: " << seg.x << endl;
+	
+      } else if(seg.x == neg_inf) {
+	// we haven't actually walked onto a line segment yet. we only know about a single point,
+	// so don't attempt to assign an optimal position on this line yet --
+	// we'll do that the next time through this loop
+	;
 
-    // merge stats that occur at the same boundary vertex
-    // if the next segment has the same position along this line, skip this segment (after updating acc)
-    ++next_i;
-    if (next_i != all_ints.end() && seg.x == (*next_i)->x) {
-      if(DEBUG) cerr << "LineOptimizer: SKIP DUE TO MERGE: " << seg.x << endl;
+      // don't waste time examining extremely small changes in the weights
+      // unless this is our first time through this loop (i.e. score is worst_score)
+      // or unless we were just at the left edge
+      } else if(last_boundary == neg_inf || cur_best_score == worst_score || seg.x - last_boundary > epsilon) {
 
-    } else if(seg.x == neg_inf) {
-      // we haven't actually walked onto a line segment yet. we only know about a single point,
-      // so don't attempt to assign an optimal position on this line yet --
-      // we'll do that the next time through this loop
-      ;
-
-    // don't waste time examining extremely small changes in the weights
-    // unless this is our first time through this loop (i.e. score is worst_score)
-    // or unless we were just at the left edge
-    } else if(last_boundary == neg_inf || cur_best_score == worst_score || seg.x - last_boundary > epsilon) {
-
-      float sco = acc->ComputeScore();
-      if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
-          (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
-        cur_best_score = sco;
-	if (best_score_stats.get() != NULL) {
-	  best_score_stats->Set(*accp);
+	float sco = acc->ComputeScore();
+	if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
+	    (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
+	  cur_best_score = sco;
+	  if (best_score_stats.get() != NULL) {
+	    best_score_stats->Set(*accp);
+	  }
+	  assert(cur_best_score >= 0.0);
+	  assert(cur_best_score <= 100.0);
+	  
+	  if (left_edge) {
+	    // seg.x is our first_boundary
+	    pos = seg.x - EXPLORE_DIST;
+	    if(DEBUG) cerr << "LineOptimizer: NEW BEST: FIRST NON -INF EDGE (LEFT EDGE) POS: " << pos << endl;
+	    assert(!isnan(pos));
+	    assert(!isinf(pos));
+	    
+	    left_edge = false;
+	  } else {
+	    // subtracting -inf (possible value of last_boundary) will result in NaN
+	    // but we guarded for this above
+	    pos = last_boundary + (seg.x - last_boundary) / 2;
+	    if(DEBUG) cerr << "LineOptimizer: NEW BEST: NON LEFT EDGE POS: " << pos << " " << last_boundary << " " << seg.x << endl;
+	    assert(!isnan(pos));
+	    assert(!isinf(pos));
+	  }
+	  if(DEBUG) cerr << "LineOptimizer: (NEW BEST): UPD POS: NEW BEST: " << pos << "  (score=" << cur_best_score << ")\n";
 	}
-	assert(cur_best_score >= 0.0);
-	assert(cur_best_score <= 100.0);
-
-	if (left_edge) {
-	  // seg.x is our first_boundary
-	  pos = seg.x - EXPLORE_DIST;
-	  if(DEBUG) cerr << "LineOptimizer: NEW BEST: FIRST NON -INF EDGE (LEFT EDGE) POS: " << pos << endl;
-	  assert(!isnan(pos));
-	  assert(!isinf(pos));
-
-	  left_edge = false;
-	} else {
-	  // subtracting -inf (possible value of last_boundary) will result in NaN
-	  // but we guarded for this above
-	  pos = last_boundary + (seg.x - last_boundary) / 2;
-	  if(DEBUG) cerr << "LineOptimizer: NEW BEST: NON LEFT EDGE POS: " << pos << " " << last_boundary << " " << seg.x << endl;
-	  assert(!isnan(pos));
-	  assert(!isinf(pos));
-	}
-	if(DEBUG) cerr << "LineOptimizer: (NEW BEST): UPD POS: NEW BEST: " << pos << "  (score=" << cur_best_score << ")\n";
+	// string xx; acc->ScoreDetails(&xx); cerr << "---- " << xx;
+	// cerr << "---- s=" << sco << "\n";
+	// keep track of the last boundary we actually evaluated
+	last_boundary = seg.x;
+      } else {
+	if(DEBUG) cerr << "LineOptimizer: SKIPPED DUE TO LAST_BOUNDARY < EPSILON: " << seg.x << endl;
       }
-      // string xx; acc->ScoreDetails(&xx); cerr << "---- " << xx;
-      // cerr << "---- s=" << sco << "\n";
-      // keep track of the last boundary we actually evaluated
-      last_boundary = seg.x;
-    } else {
-      if(DEBUG) cerr << "LineOptimizer: SKIPPED DUE TO LAST_BOUNDARY < EPSILON: " << seg.x << endl;
+      acc->PlusEquals(*seg.delta);
+      // cerr << "x-boundary=" << seg.x << "\n";
     }
-    acc->PlusEquals(*seg.delta);
-    // cerr << "x-boundary=" << seg.x << "\n";
-  }
 
-  float sco = acc->ComputeScore();
-  if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
-      (type == MINIMIZE_SCORE && sco < cur_best_score) ) {
-    cur_best_score = sco;
-    if (best_score_stats.get() != NULL) {
-      best_score_stats->Set(*accp);
+    float sco = acc->ComputeScore();
+    if ((type == MAXIMIZE_SCORE && sco > cur_best_score) ||
+	(type == MINIMIZE_SCORE && sco < cur_best_score) ) {
+      cur_best_score = sco;
+      if (best_score_stats.get() != NULL) {
+	best_score_stats->Set(*accp);
+      }
+      assert(cur_best_score >= 0.0);
+      assert(cur_best_score <= 100.0);
+
+      // if we're still at the left_edge, we never found
+      // a second point to create our first line segment
+      // in this case, we stick with pos's default value of 0.0, which disables the feature
+      if (!left_edge) {
+	pos = last_boundary + EXPLORE_DIST;
+	assert(!isinf(pos));
+	assert(!isnan(pos));
+      }
+      if(DEBUG) cerr << "LineOptimizer: FIN POS " << pos << " " << sco << endl;
     }
     assert(cur_best_score >= 0.0);
     assert(cur_best_score <= 100.0);
 
-    // if we're still at the left_edge, we never found
-    // a second point to create our first line segment
-    // in this case, we stick with pos's default value of 0.0, which disables the feature
-    if (!left_edge) {
-      pos = last_boundary + EXPLORE_DIST;
-      assert(!isinf(pos));
-      assert(!isnan(pos));
+    *best_score = cur_best_score;
+    assert(!isnan(pos));
+    assert(!isinf(pos)); // -inf is not acceptable even as left edge
+    return pos;
+  } catch(IllegalStateException& e) {
+    accp = all_ints.front()->delta->GetZero();
+    e << "\n LineOptimize(): IllegalState while running LineOptimize on " << all_ints.size() << " error vertices: {";
+    for(unsigned i=0; i<all_ints.size(); ++i) {
+      const ErrorSegment& seg = *all_ints.at(i);
+      e << seg.x << " -> ";
+      if(seg.delta.get() != NULL) {
+	e << *seg.delta;
+	accp->PlusEquals(*seg.delta);
+	e << " ((acc=" << *accp << "))";
+      }
+      e << ", ";
     }
-    if(DEBUG) cerr << "LineOptimizer: FIN POS " << pos << " " << sco << endl;
+    e << "}; outside_stats = ";
+    if(outside_stats != NULL) {
+      e << *outside_stats;
+    }
+    throw;
   }
-  assert(cur_best_score >= 0.0);
-  assert(cur_best_score <= 100.0);
-
-  *best_score = cur_best_score;
-  assert(!isnan(pos));
-  assert(!isinf(pos)); // -inf is not acceptable even as left edge
-  return pos;
 }
 
 void LineOptimizer::RandomUnitVector(const vector<int>& features_to_optimize,

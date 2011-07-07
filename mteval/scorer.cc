@@ -17,6 +17,7 @@
 #include "comb_scorer.h"
 #include "tdict.h"
 #include "stringlib.h"
+#include "exception.h"
 
 using boost::shared_ptr;
 using namespace std;
@@ -171,6 +172,7 @@ class BLEUScore : public ScoreBase<BLEUScore> {
         correct_ngram_hit_counts[i] != 0) return false;
     return true;
   }
+  virtual bool HasValidStats() const;
  private:
   int N() const {
     return hyp_ngram_counts.size();
@@ -403,18 +405,23 @@ ScoreP SentenceScorer::CreateScoreFromString(const ScoreType type, const string&
   }
 }
 
-void BLEUScore::ScoreDetails(string* details) const {
-  char buf[2000];
-  vector<float> precs(max(N(),4));
-  float bp;
-  float bleu = 0.0;
+bool BLEUScore::HasValidStats() const {
   bool valid_score = true;
   for(unsigned i=0; i<4; ++i) {
     if(correct_ngram_hit_counts[i] < 0 || hyp_ngram_counts[i] < 0) {
       valid_score = false;
     }
   }
-  if(valid_score) {
+  return valid_score;
+}
+
+
+void BLEUScore::ScoreDetails(string* details) const {
+  char buf[2000];
+  vector<float> precs(max(N(),4));
+  float bp;
+  float bleu = 0.0;
+  if(HasValidStats()) {
     bleu = ComputeScore(&precs, &bp);
   }
   for (int i=N();i<4;++i)
@@ -442,11 +449,10 @@ float BLEUScore::ComputeScore(vector<float>* precs, float* bp) const {
       float cor_count = correct_ngram_hit_counts[i];
       // smooth bleu
       if (!cor_count) { cor_count = 0.01; }
-      if(cor_count < 0 || hyp_ngram_counts[i] < 0) {
-	cerr << "ERROR: Cannot compute score given stats for order " << i << ": " << cor_count << "/" << hyp_ngram_counts[i] << endl;
-	assert(cor_count >= 0);
-	assert(hyp_ngram_counts[i] >= 0);
-      }
+      // NOTE: Be careful to only use << this when it's guaranteed not to call ComputeScore again (to prevent a stack overflow)
+      if(cor_count < 0) UTIL_THROW(IllegalStateException, "ComputeScore(): Cannot compute score given stats for order " << i << ": " << cor_count << "/" << hyp_ngram_counts[i] << "; stats are " << *this);
+      if(hyp_ngram_counts[i] < 0) UTIL_THROW(IllegalStateException, "ComputeScore(): Cannot compute score given stats for order " << i << ": " << cor_count << "/" << hyp_ngram_counts[i] << "; stats are " << *this);
+      
       float lprec = log(cor_count) - log(hyp_ngram_counts[i]);
       if (precs) precs->push_back(exp(lprec));
       log_bleu += lprec;
@@ -513,8 +519,12 @@ void BLEUScore::PlusEquals(const Score& delta) {
   hyp_len += d.hyp_len;
 
   for(unsigned i=0; i<correct_ngram_hit_counts.size(); ++i) {
-    assert(correct_ngram_hit_counts[i] >= 0);
-    assert(hyp_ngram_counts[i] >= 0);
+    if(correct_ngram_hit_counts[i] < 0) {
+      cerr << "WARNING: correct_ngram_hit_counts[" << i << "] = " << correct_ngram_hit_counts[i] << endl;
+    }
+    if(hyp_ngram_counts[i] < 0) {
+      cerr << "WARNING: hyp_ngram_counts[" << i << "] = " << hyp_ngram_counts[i] << endl;
+    }
   }
 }
 

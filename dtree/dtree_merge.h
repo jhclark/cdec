@@ -179,9 +179,16 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     // accumulate metric stats for sentences outside this DTNode
     ScoreP outside_stats = prev_clust.stats_.front()->GetZero();
     outside_stats->PlusEquals(*prev_clust.all_stats_);
+    if(!outside_stats->HasValidStats()) UTIL_THROW(IllegalStateException, "Invalid prev_clust.all_stats_: " << *prev_clust.all_stats_);
     // subtract off the stats for the clusters we're about to optimize
     outside_stats->PlusEquals(*prev_clust.stats_.at(iSrc1), -1);
     outside_stats->PlusEquals(*prev_clust.stats_.at(iSrc2), -1);
+    if(!outside_stats->HasValidStats()) {
+      UTIL_THROW(IllegalStateException, "Merge(): Invalid outside_stats: " << *outside_stats
+		 << "; from prev_clust.all_stats_: " << *prev_clust.all_stats_
+		 << "; after subtracting iSrc1=" << iSrc1 << " (" << *prev_clust.stats_.at(iSrc1) << ")"
+		 << " and iSrc2=" << iSrc2 << " (" << *prev_clust.stats_.at(iSrc2) << ")");
+    }
     
     size_t err_verts = 0;
     size_t dir_err_verts = 0;
@@ -200,8 +207,15 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
       if(DEBUG) cerr << "dtree_merge: outside_stats are " << *outside_stats << endl;
       float score;
       ScoreP stats_result = prev_clust.stats_.front()->GetZero();
-      double x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
+      double x;
+      try {
+	x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
 					     line_epsilon_, outside_stats);
+      } catch(IllegalStateException& e) {
+	e << "\n Merge(): Illegal State while running line optimizer in direction " << dir_id << " on " << points << " error vertices";
+	throw;
+      }
+
       score *= 100;
       assert(score >= 0.0);
       assert(score <= 100.0);
