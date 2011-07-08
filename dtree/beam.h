@@ -5,7 +5,7 @@
 using namespace std;
 
 // an inefficient beam implementation
-template <typename T>
+template <typename T> // T is a pointer type with ->GetScore()
 class Beam {
  public:
  Beam(size_t sz)
@@ -17,16 +17,16 @@ class Beam {
 
   bool WillAccept(double score) const {
     if(list_.size() >= sz_) {
-      return score > list_.back().GetScore();
+      return score > list_.back()->GetScore();
     } else {
       return true;
     }
   }
 
   void Add(const T& t) {
-    if(WillAccept(t.GetScore())) {
+    if(WillAccept(t->GetScore())) {
       typename vector<T>::iterator it = list_.begin();
-      while(it != list_.end() && it->GetScore() >= t.GetScore()) {
+      while(it != list_.end() && (*it)->GetScore() >= t->GetScore()) {
 	++it;
       }
       list_.insert(it, t);
@@ -37,6 +37,7 @@ class Beam {
   }
 
   // returns a pointer to the position in the beam
+  /*
   T* Add(const double score) {
     if(WillAccept(score)) {
       typename vector<T>::iterator it = list_.begin();
@@ -53,6 +54,7 @@ class Beam {
       return NULL;
     }
   }
+*/
 
   T& At(size_t i) {
     return list_.at(i);

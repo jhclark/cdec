@@ -15,6 +15,7 @@ void ParseOpts(int argc, char** argv, po::variables_map* conf) {
     ("mode,M",po::value<string>(), "Optimization mode. One of: split, merge")
     ("min_sents,m",po::value<unsigned>(), "Minimum sentences per decision tree node (for split optimizer)")
     ("beam_size,b",po::value<unsigned>(), "How many best clusterings should we keep around? (for merge optimizer)")
+    ("epsilon_loss,L",po::value<float>(), "At what amount of loss relative to the previous clustering do we simply accept a merge? (in metric%)")
     ("clusters,c",po::value<unsigned>(), "What is the desired number of output clusters? (for merge optimizer)")
     ("help,h", "Help");
 
@@ -271,9 +272,11 @@ int main(int argc, char** argv) {
     // TODO: Save decision tree for decoder use
     // Serialize(outFile, dtree);
   } else if(mode == "merge") {
-    unsigned beam_size = conf["beam_size"].as<unsigned>();
-    unsigned clusters = conf["clusters"].as<unsigned>();
-    DTreeMergeOptimizer opt(opt_type, DEFAULT_LINE_EPSILON, dirs, beam_size);
+    const unsigned beam_size = conf["beam_size"].as<unsigned>();
+    const unsigned clusters = conf["clusters"].as<unsigned>();
+    const float epsilon_loss = conf["epsilon_loss"].as<float>();
+    
+    DTreeMergeOptimizer opt(opt_type, DEFAULT_LINE_EPSILON, epsilon_loss, dirs, beam_size);
 
     dtree.question_ = questions.front(); // split by all tuning sentences
     opt.MergeNode(origin, src_sents, active_sents, sent_surfs, clusters, dtree);
