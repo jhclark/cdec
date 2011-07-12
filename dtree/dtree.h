@@ -255,7 +255,8 @@ class DTreeOptBase {
 	      break;
 	  }
 	}
-	if(DEBUG) cerr << "UpdateStats: Found Stats along direction " << iMatchDir << " at position " << pos << ": " << *accp << endl;
+	bool DEBUG2 = true;
+	if(DEBUG2) cerr << "UpdateStats: Found Stats along direction " << iMatchDir << " at position " << pos << ": " << *accp << endl;
 	parent_stats_by_sent->at(iSent) = accp;
       }
     }
@@ -307,14 +308,19 @@ class DTreeOptBase {
       }
     }
 
-    if(DEBUG) {
+    bool DEBUG2 = true;
+    if(DEBUG2) {
       ScoreP all_stats = parent_stats_by_sent.front()->GetZero();
+      ScoreP node_stats = parent_stats_by_sent.front()->GetZero();
       for(size_t i =0; i<sent_count; ++i) {
 	const ScoreP& sent_stats = parent_stats_by_sent.at(i);
  	all_stats->PlusEquals(*sent_stats);
       }
+      node_stats->PlusEquals(*all_stats);
+      node_stats->PlusEquals(*outside_stats, -1);
       cerr << "OptimizeNode: ALL STATS BEFORE: " << *all_stats << endl;
       cerr << "OptimizeNode: OUTSIDE STATS BEFORE (for " << (sent_count - active_count) << " inactive sentences): " << *outside_stats << endl;
+      cerr << "OptimizeNode: INSIDE STATS BEFORE (for " << (active_count) << " active sentences): " << *node_stats << endl;
     }
 
     bool found_better = false;
@@ -359,7 +365,12 @@ class DTreeOptBase {
 	*best_dir_err_verts = points;
 	found_better = true;
 
-	if(DEBUG) cerr << "OptimizeNode: NEW BEST: " << score << " " << dir_id << " " << x << " (gain over prev 'branch' = " << (*best_score - prev_best_score) << ") :: STATS = " << *stats_result << endl;
+	if(DEBUG2) {
+	  ScoreP node_stats = stats_result->GetZero();
+	  node_stats->PlusEquals(*stats_result);
+	  node_stats->PlusEquals(*outside_stats, -1);
+	  cerr << "OptimizeNode: NEW BEST: " << score << " " << dir_id << " " << x << " (gain over prev 'branch' = " << (*best_score - prev_best_score) << ") :: ALL STATS = " << *stats_result << " :: " << *node_stats << endl;
+	}
       }
       *err_verts += points;
     }

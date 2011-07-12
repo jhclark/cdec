@@ -90,9 +90,14 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     cerr << "Projected score after optimizing single node: " << opt_score
 	 << " (" << dir_err_verts << " error vertices in best direction, " << err_verts << " total)" << endl;
 
-    // Now optimize all of the splits individually
+    // initialize dir and steps to zero
     init->best_dir_.resize(cur_clusters);
     init->best_step_.resize(cur_clusters);
+
+    cout << "Single node (k=1) initialization:" << endl;
+    cout << *init << endl;
+
+    // Now optimize all of the splits individually
     OptimizeQuestion(*node.question_, src_sents, active_sents, init->stats_, init->surfs_,
 		     opt_score, opt_dir, opt_update,
 		     &init->score_, &init->best_dir_, &init->best_step_, &init->stats_);
@@ -112,6 +117,8 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     cout << "Init:" << endl;
     cout << *init << endl;
 
+    exit(1);
+    
     cerr << "k=" << cur_clusters << ": Score=" << init->score_ << endl;
 
     // k is our target number of clusters for this iteration 
