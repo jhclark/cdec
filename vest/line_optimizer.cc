@@ -109,6 +109,7 @@ double LineOptimizer::LineOptimize(
 	  }
 	  if(DEBUG) cerr << "LineOptimizer: (NEW BEST): UPD POS: NEW BEST: " << pos << "  (score=" << cur_best_score << ")\n";
 	}
+
 	// string xx; acc->ScoreDetails(&xx); cerr << "---- " << xx;
 	// cerr << "---- s=" << sco << "\n";
 	// keep track of the last boundary we actually evaluated
