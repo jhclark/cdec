@@ -219,7 +219,7 @@ inline ostream& operator<<(ostream& out, const Clustering& c) {
     out << "; dir=" << dir << " step=" << step;
 
     SparseVector<double> weights = c.origin_;
-    weights += c.dirs_.at(dir);
+    weights += c.dirs_.at(dir) * step;
     out << "; weights: " << weights << endl;
   }
   return out;
