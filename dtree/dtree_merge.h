@@ -22,7 +22,8 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 		      const size_t beam_size) // how many clusterings should we keep around?
     : DTreeOptBase(dirs, opt_type, line_epsilon, 0), // min_sents_per_node = 0 here
       beam_size_(beam_size),
-      epsilon_loss_(epsilon_loss) {}
+      epsilon_loss_(epsilon_loss),
+      CACHE_DEBUG(false) {}
 
   void MergeNode(const SparseVector<double>& origin,
 		 const vector<DTSent>& src_sents,
@@ -58,6 +59,8 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
     // presize caches
     init->cache_.fronteir_cache_.resize(cur_clusters);
     init->cache_.best_partner_cache_.resize(cur_clusters);
+
+    cerr << "Origin: " << origin << endl;
 
     // first, find out where we're starting on the error surface
     // we'll usually be starting at the origin, so dir doesn't matter and step will be 0.0
@@ -116,8 +119,6 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 
     cout << "Init:" << endl;
     cout << *init << endl;
-
-    exit(1);
     
     cerr << "k=" << cur_clusters << ": Score=" << init->score_ << endl;
 
@@ -141,13 +142,13 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	  // check if we have a cached partner for this cluster or if we must search for it
 	  // we only apply this (slightly) approximate cache when there are many pairs left to be searched
 	  unsigned approx_threshold = 1000;
-	  size_t fronteir_j = prev_clust.cache_.fronteir_cache_.at(i);
+	  const size_t fronteir_j = prev_clust.cache_.fronteir_cache_.at(i);
 	  if(num_pairs > approx_threshold && fronteir_j == prev_clust.Size()) {
 	    // we know (approximately) the best partner
 	    // NOTE: This is an approximation since the best partner can change due to things like length effects
 
 	    size_t cached_j = prev_clust.cache_.best_partner_cache_.at(i);
-	    cerr << "Cache hit for " << i << ": " << cached_j << endl;
+	    if(CACHE_DEBUG) cerr << "Cache hit for " << i << ": " << cached_j << endl;
 	    // just recover the Clustering for this partner and add it to the beam
 	    Merge(prev_clust, i, cached_j, *beam);
 
@@ -159,13 +160,16 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	    if(fronteir_j > 0) {
 	      // pick up wherever we left off searching (often, we pick up at the beginning)
 	      best_partner = prev_clust.cache_.best_partner_cache_.at(i);
-	      cerr << "Resuming for " << i << " at " << fronteir_j << " with best index: " << best_partner << endl;
+
 	      // just recover the Clustering for this partner and add it to the beam
 	      best_partner_score = Merge(prev_clust, i, best_partner, *beam);
 
+	      if(CACHE_DEBUG) cerr << "Resuming for " << i << " at " << fronteir_j << " with best index: " << best_partner
+				   << " with score " << best_partner_score << endl;
+
 	      start = fronteir_j;
 	    } else {
-	      cerr << "Fronteir is " << fronteir_j << endl;
+	      if(CACHE_DEBUG) cerr << "Fronteir for " << i << " is " << fronteir_j << endl;
 	    }
 	    
 	    size_t j;
@@ -208,10 +212,14 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 		     << " (< " << epsilon_loss_ << ")" << endl;
 		term_early = true;
 	      }
-	    } // for partners
+
+              // short circuit the search by always merging the first and last clusters
+              //cerr << "Using first merge" << endl;
+              //term_early = true;
+	    } // for partners j
 
 	    // update the cache with the best match we found and how far we got
-	    prev_clust.cache_.fronteir_cache_.at(i) = j-1;
+	    prev_clust.cache_.fronteir_cache_.at(i) = j;
 	    prev_clust.cache_.best_partner_cache_.at(i) = best_partner;
 
 	  } // check for cache hit
@@ -219,12 +227,12 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 
 	// update search cache of entries in current resulting clusters
 	for(size_t iBeam=0; iBeam < beam->Size(); ++iBeam) {
-	  cerr << "Storing cache... best_partner for 0 is " << prev_clust.cache_.best_partner_cache_.at(0) << "; fronteir is " << prev_clust.cache_.best_partner_cache_.at(0) << endl;
+	  if(CACHE_DEBUG) cerr << "Storing cache... fronteir is " << prev_clust.cache_.fronteir_cache_ << endl;
 
 	  Clustering& clust = *beam->At(iBeam);
 	  clust.cache_ = prev_clust.cache_;
 	  clust.cache_.Merge(clust.recent_merge1_, clust.recent_merge2_);
-	  cerr << "Stored cache... best_partner for 0 is " << clust.cache_.best_partner_cache_.at(0) << "; fronteir is " << clust.cache_.best_partner_cache_.at(0) << endl;
+	  if(CACHE_DEBUG) cerr << "Stored cache... best_partners are " << clust.cache_.best_partner_cache_ << "; fronteir is " << clust.cache_.fronteir_cache_ << endl;
 	}
 	
       } // iPrevBeam
@@ -319,6 +327,12 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
 	clust->stats_.at(iTgt)->PlusEquals(*stats_result);
 	clust->stats_.at(iTgt)->PlusEquals(*outside_stats, -1);
 
+        clust->all_stats_ = stats_result;
+
+        // Verify that these are the same stats we get by applying this merged cluster's
+        // new weights to the sufficient stats for the sentences in this merged cluster
+        //clust->VerifyScore();
+
 	dir_err_verts = points;
       }
       err_verts += points;
@@ -339,6 +353,8 @@ class DTreeMergeOptimizer : protected DTreeOptBase {
  private:
   const size_t beam_size_;
   const float epsilon_loss_; // in metric%
+
+  const bool CACHE_DEBUG;
 };
 
 #endif
