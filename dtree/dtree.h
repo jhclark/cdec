@@ -161,11 +161,12 @@ class DTreeOptBase {
 		   const SparseVector<double> dir,
 		   const SparseVector<double> goal) {
 
-    assert(origin.size() == dir.size());
-    assert(origin.size() == goal.size());
+    // not required due to potential sparsity
+    //assert(origin.size() == dir.size());
+    //assert(origin.size() == goal.size());
 
     if(origin == goal) {
-      cerr << origin << goal << endl;
+      //cerr << origin << goal << endl;
       return 0.0;
     } else {
       const double MINF = -numeric_limits<double>::infinity();
@@ -255,7 +256,7 @@ class DTreeOptBase {
 	      break;
 	  }
 	}
-	bool DEBUG2 = true;
+	bool DEBUG2 = false;
 	if(DEBUG2) cerr << "UpdateStats: Found Stats along direction " << iMatchDir << " at position " << pos << ": " << *accp << endl;
 	parent_stats_by_sent->at(iSent) = accp;
       }
@@ -297,7 +298,7 @@ class DTreeOptBase {
     ScoreP outside_stats = parent_stats_by_sent.front()->GetZero();
     const size_t sent_count = sent_ids.size();
     size_t active_count = 0;
-    for(size_t i =0; i<sent_count; ++i) {
+    for(size_t i=0; i<sent_count; ++i) {
       if(sent_ids.at(i)) {
 	// accumuate metric stats inside this node later within loop over dirs
 	++active_count;
@@ -308,7 +309,7 @@ class DTreeOptBase {
       }
     }
 
-    bool DEBUG2 = true;
+    bool DEBUG2 = false;
     if(DEBUG2) {
       ScoreP all_stats = parent_stats_by_sent.front()->GetZero();
       ScoreP node_stats = parent_stats_by_sent.front()->GetZero();
@@ -330,12 +331,12 @@ class DTreeOptBase {
     *err_verts = 0;
 
     for(size_t dir_id = 0; dir_id < dirs_.size(); ++dir_id) {
-      
+
       // accumulate the error surface for this direction
       // for the sentences inside this DTNode
       vector<ErrorSurface> esv;
       size_t points = 0;
-      for(size_t i =0; i<sent_count; ++i) {
+      for(size_t i=0; i<sent_count; ++i) {
 	if(sent_ids.at(i)) {
 	  const ErrorSurface& sent_surface = sent_surfs.at(i).AtDir(dir_id);
 	  esv.push_back(sent_surface);
@@ -349,7 +350,7 @@ class DTreeOptBase {
       double x;
       try {
 	x = LineOptimizer::LineOptimize(esv, opt_type_, stats_result, &score,
-					       line_epsilon_, outside_stats);
+					line_epsilon_, outside_stats);
       } catch(IllegalStateException& e) {
 	e << "\n OptimizeNode(): Illegal State while running line optimizer in direction " << dir_id << " on " << points << " error vertices";
 	throw;
