@@ -32,7 +32,8 @@ env = Environment(PREFIX=GetOption('prefix'),
 		      CCFLAGS=Split('-g -DHAVE_SCONS'))
 
 if GetOption('debug'):
-    env.Append(CCFLAGS=Split('-O0'))
+    env.Append(CCFLAGS=Split('-O0'),
+               LIBS=Split("SegFault"))
 else:
     env.Append(CCFLAGS=Split('-O3'))
 
