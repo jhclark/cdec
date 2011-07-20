@@ -124,6 +124,13 @@ def comb(cc, srcs):
    x.extend(srcs)
    return x
 
+# see http://www.scons.org/doc/0.96.90/HTML/scons-user/a5264.html (CFile)
+# see http://www.scons.org/doc/1.2.0/HTML/scons-user/a4774.html (LEXFLAGS)
+print 'Ruing LEX'
+env.Append("-s -CF -8")
+#flex -s -CF -8 -o decoder/rule_lexer.cc decoder/rule_lexer.l
+env.CFile(target='decoder/rule_lexer.cc', source="decoder/rule_lexer.l")
+
 env.Program(target='decoder/cdec', source=comb('decoder/cdec.cc', srcs))
 # TODO: The various decoder tests
 # TODO: extools
