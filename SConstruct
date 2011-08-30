@@ -1,4 +1,5 @@
 #!/usr/bin/python
+import check_boost
 
 # EXPERIMENTAL and HACKY version of cdec build in scons
 
@@ -14,9 +15,12 @@ AddOption('--with-mpi', dest='mpi', action='store_true',
                   help='build tools that use Message Passing Interface? (optional)')
 AddOption('--efence', dest='efence', action='store_true',
                   help='use electric fence for debugging memory corruptions')
+AddOption('--no-opt', dest='debug', action='store_true',
+          help='turn off optimization so that we dont remove useful debugging information')
 
 platform = ARGUMENTS.get('OS', Platform())
-include = Split('decoder utils klm mteval training .')
+# Need vest for dtree
+include = Split('decoder dtree utils klm mteval training vest .')
 env = Environment(PREFIX=GetOption('prefix'),
                       PLATFORM = platform,
 #                      BINDIR = bin,
@@ -25,11 +29,25 @@ env = Environment(PREFIX=GetOption('prefix'),
                       CPPPATH = include,
                       LIBPATH = [],
                       LIBS = Split('boost_program_options boost_serialization boost_thread z'),
-		      CCFLAGS=Split('-g -O3 -DHAVE_SCONS'))
+		      CCFLAGS=Split('-g -DHAVE_SCONS'))
 
+if GetOption('debug'):
+    env.Append(CCFLAGS=Split('-O0'),
+               LIBS=Split("SegFault"))
+else:
+    env.Append(CCFLAGS=Split('-O3'))
+
+import os
+if os.path.exists('colorgcc.pl'):
+    path = os.path.abspath('colorgcc.pl')
+    print('Found colorgcc at ' + path)
+    env['CC'] = path
+    env['CXX'] = path
+else:
+    print('colorgcc not found')
 
 # Do some autoconf-like sanity checks (http://www.scons.org/wiki/SconsAutoconf)
-conf = Configure(env)
+conf = Configure(env, custom_tests = {'CheckBoost' : check_boost.CheckBoost})
 print('Checking if the environment is sane...')
 if not conf.CheckCXX():
     print('!! Your compiler and/or environment is not correctly configured.')
@@ -46,6 +64,11 @@ if boost:
               CPPPATH=boost+'/include',
 	      LIBPATH=boost+'/lib')
 
+# Check boost version (older versions have problems with program options)
+if not conf.CheckBoost('1.46'):
+    print('Boost version >= 1.46 needed')
+    Exit(1)
+
 if not conf.CheckLib('boost_program_options'):
    print "Boost library 'boost_program_options' not found"
    Exit(1)
@@ -60,7 +83,7 @@ if mpi:
       Exit(1)   
 
 if GetOption('efence'):
-   env.Append(LIBS=Split('efence Segfault'))
+   env.Append(LIBS=Split('efence')) #Segfault (as a lib)
 
 print('Environment is sane.')
 print
@@ -80,7 +103,15 @@ if glc:
    srcs.append(glc+'/feature-factory.cc')
    srcs.append(glc+'/cdec/ff_glc.cc')
 
-for pattern in ['decoder/*.cc', 'decoder/*.c', 'klm/*/*.cc', 'utils/*.cc', 'mteval/*.cc', 'vest/*.cc']:
+# Run LEX *before* detecting .cc files
+# see http://www.scons.org/doc/0.96.90/HTML/scons-user/a5264.html (CFile)
+# see http://www.scons.org/doc/1.2.0/HTML/scons-user/a4774.html (LEXFLAGS)
+print 'Ruing LEX'
+env.Append(LEXFLAGS="-s -CF -8")
+#flex -s -CF -8 -o decoder/rule_lexer.cc decoder/rule_lexer.l
+env.CFile(target='decoder/rule_lexer.cc', source="decoder/rule_lexer.l")
+
+for pattern in ['decoder/*.cc', 'decoder/*.c', 'dtree/*.cc', 'klm/*/*.cc', 'utils/*.cc', 'mteval/*.cc', 'vest/*.cc']:
     srcs.extend([ file for file in Glob(pattern)
     		       if not 'test' in str(file)
 		       	  and 'build_binary.cc' not in str(file)
@@ -90,6 +121,8 @@ for pattern in ['decoder/*.cc', 'decoder/*.c', 'klm/*/*.cc', 'utils/*.cc', 'mtev
 			  and 'fast_score.cc' not in str(file)
                           and 'cdec.cc' not in str(file)
                           and 'mr_' not in str(file)
+                          and 'dtree.cc' not in str(file)
+                          and 'extract_topbest.cc' not in str(file)
                           and 'utils/ts.cc' != str(file)
 		])
 
@@ -126,6 +159,10 @@ env.Program(target='vest/sentclient', source=['vest/sentclient.c'], LINKFLAGS='-
 env.Program(target='vest/mr_vest_generate_mapper_input', source=comb('vest/mr_vest_generate_mapper_input.cc', srcs))
 env.Program(target='vest/mr_vest_map', source=comb('vest/mr_vest_map.cc', srcs))
 env.Program(target='vest/mr_vest_reduce', source=comb('vest/mr_vest_reduce.cc', srcs))
+
+# Decision tree stuffs
+env.Program(target='dtree/dtree', source=comb('dtree/dtree.cc', srcs))
+env.Program(target='dtree/extract_topbest', source=comb('dtree/extract_topbest.cc', srcs))
 #env.Program(target='vest/lo_test', source=comb('vest/lo_test.cc', srcs))
 # TODO: util tests
 
