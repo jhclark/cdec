@@ -20,7 +20,7 @@ AddOption('--no-opt', dest='debug', action='store_true',
 
 platform = ARGUMENTS.get('OS', Platform())
 # Need vest for dtree
-include = Split('decoder dtree utils klm mteval training vest .')
+include = Split('decoder utils klm mteval training vest .') #dtree
 env = Environment(PREFIX=GetOption('prefix'),
                       PLATFORM = platform,
 #                      BINDIR = bin,
@@ -111,7 +111,7 @@ env.Append(LEXFLAGS="-s -CF -8")
 #flex -s -CF -8 -o decoder/rule_lexer.cc decoder/rule_lexer.l
 env.CFile(target='decoder/rule_lexer.cc', source="decoder/rule_lexer.l")
 
-for pattern in ['decoder/*.cc', 'decoder/*.c', 'dtree/*.cc', 'klm/*/*.cc', 'utils/*.cc', 'mteval/*.cc', 'vest/*.cc']:
+for pattern in ['decoder/*.cc', 'decoder/*.c', 'klm/*/*.cc', 'utils/*.cc', 'mteval/*.cc', 'vest/*.cc']: # 'dtree/*.cc', 
     srcs.extend([ file for file in Glob(pattern)
     		       if not 'test' in str(file)
 		       	  and 'build_binary.cc' not in str(file)
@@ -121,10 +121,10 @@ for pattern in ['decoder/*.cc', 'decoder/*.c', 'dtree/*.cc', 'klm/*/*.cc', 'util
 			  and 'fast_score.cc' not in str(file)
                           and 'cdec.cc' not in str(file)
                           and 'mr_' not in str(file)
-                          and 'dtree.cc' not in str(file)
                           and 'extract_topbest.cc' not in str(file)
                           and 'utils/ts.cc' != str(file)
-		])
+		]) #                           and 'dtree.cc' not in str(file)
+srcs.append('training/optimize.cc')
 
 print 'Found {0} source files'.format(len(srcs))
 def comb(cc, srcs):
@@ -141,6 +141,10 @@ env.Program(target='mteval/fast_score', source=comb('mteval/fast_score.cc', srcs
 env.Program(target='mteval/mbr_kbest', source=comb('mteval/mbr_kbest.cc', srcs))
 #env.Program(target='mteval/scorer_test', source=comb('mteval/fast_score.cc', srcs))
 # TODO: phrasinator
+
+# PRO Trainer
+env.Program(target='pro-train/mr_pro_map', source=comb('pro-train/mr_pro_map.cc', srcs))
+env.Program(target='pro-train/mr_pro_reduce', source=comb('pro-train/mr_pro_reduce.cc', srcs))
 
 # TODO: Various training binaries
 env.Program(target='training/model1', source=comb('training/model1.cc', srcs))
@@ -161,8 +165,8 @@ env.Program(target='vest/mr_vest_map', source=comb('vest/mr_vest_map.cc', srcs))
 env.Program(target='vest/mr_vest_reduce', source=comb('vest/mr_vest_reduce.cc', srcs))
 
 # Decision tree stuffs
-env.Program(target='dtree/dtree', source=comb('dtree/dtree.cc', srcs))
-env.Program(target='dtree/extract_topbest', source=comb('dtree/extract_topbest.cc', srcs))
+#env.Program(target='dtree/dtree', source=comb('dtree/dtree.cc', srcs))
+#env.Program(target='dtree/extract_topbest', source=comb('dtree/extract_topbest.cc', srcs))
 #env.Program(target='vest/lo_test', source=comb('vest/lo_test.cc', srcs))
 # TODO: util tests
 
