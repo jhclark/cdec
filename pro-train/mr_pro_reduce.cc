@@ -228,6 +228,8 @@ int main(int argc, char** argv) {
   vector<pair<double,double> > sp;
   vector<double> smoothed;
   if (tune_regularizer) {
+    cerr << "Tuning regularizer..." << endl;
+
     sigsq = min_reg;
     const double steps = 18;
     double sweep_factor = exp((log(max_reg) - log(min_reg)) / steps);
@@ -255,10 +257,13 @@ int main(int argc, char** argv) {
       }
     }
     sigsq = sp[best_i].first;
-    tppl = LearnParameters(training, testing, sigsq, conf["memory_buffers"].as<unsigned>(), &x);
   }
+  cerr << "Learning parameters..." << endl;
+  tppl = LearnParameters(training, testing, sigsq, conf["memory_buffers"].as<unsigned>(), &x);
+
   Weights w;
   if (conf.count("weights")) {
+    cerr << "Interpolating with previous weight vectors..." << endl;
     for (int i = 1; i < x.size(); ++i)
       x[i] = (x[i] * psi) + old_weights.get(i) * (1.0 - psi);
   }
