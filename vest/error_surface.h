@@ -9,10 +9,15 @@
 class Score;
 
 struct ErrorSegment {
-  double x;
-  ScoreP delta;
-  ErrorSegment() : x(0), delta() {}
+  double x; // left boundary of this segment for the current feature's weight
+  ScoreP delta; // change in suffucient stats / metric store at that boundary
+  ErrorSegment() : x(0), delta(NULL) {}
 };
+
+inline std::ostream& operator<<(std::ostream& out, const ErrorSegment& score) {
+  out << "((" << score.x << ": " << *(score.delta) << "))";
+  return out;
+}
 
 class ErrorSurface : public std::vector<ErrorSegment> {
  public:
@@ -20,5 +25,7 @@ class ErrorSurface : public std::vector<ErrorSegment> {
   void Serialize(std::string* out) const;
   void Deserialize(ScoreType type, const std::string& in);
 };
+
+typedef ErrorSurface::const_iterator ErrorIter;
 
 #endif
