@@ -10,6 +10,7 @@
 #include "filelib.h"
 #include "stringlib.h"
 #include "sparse_vector.h"
+#include "weights.h"
 #include "scorer.h"
 #include "viterbi_envelope.h"
 #include "inside_outside.h"
@@ -42,28 +43,6 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
   }
 }
 
-bool ReadSparseVectorString(const string& s, SparseVector<double>* v) {
-#if 0
-  // this should work, but untested.
-  std::istringstream i(s);
-  i>>*v;
-#else
-  vector<string> fields;
-  Tokenize(s, ';', &fields);
-  if (fields.empty()) return false;
-  for (int i = 0; i < fields.size(); ++i) {
-    vector<string> pair(2);
-    Tokenize(fields[i], '=', &pair);
-    if (pair.size() != 2) {
-      cerr << "Error parsing vector string: " << fields[i] << endl;
-      return false;
-    }
-    v->set_value(FD::Convert(pair[0]), atof(pair[1].c_str()));
-  }
-  return true;
-#endif
-}
-
 int main(int argc, char** argv) {
   po::variables_map conf;
   InitCommandLine(argc, argv, &conf);
@@ -85,9 +64,9 @@ int main(int argc, char** argv) {
     // path-to-file (JSON) sent_ed starting-point search-direction
     is >> file >> sent_id >> s_origin >> s_axis;
     SparseVector<double> origin;
-    assert(ReadSparseVectorString(s_origin, &origin));
+    assert(Weights::ReadSparseVectorString(s_origin, &origin));
     SparseVector<double> axis;
-    assert(ReadSparseVectorString(s_axis, &axis));
+    assert(Weights::ReadSparseVectorString(s_axis, &axis));
     // cerr << "File: " << file << "\nAxis: " << axis << "\n   X: " << origin << endl;
     if (last_file != file) {
       last_file = file;
@@ -102,7 +81,7 @@ int main(int argc, char** argv) {
     // cerr << "Error surface has " << es.size() << " segments\n";
     string val;
     es.Serialize(&val);
-    cout << 'M' << ' ' << s_origin << ' ' << s_axis << '\t';
+    cout << 'M' << ' ' << s_origin << ' ' << s_axis << '\t' << sent_id << ' ';
     B64::b64encode(val.c_str(), val.size(), &cout);
     cout << endl << flush;
   }
