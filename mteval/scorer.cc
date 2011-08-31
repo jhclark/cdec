@@ -18,6 +18,7 @@
 #include "tdict.h"
 #include "stringlib.h"
 #include "external_scorer.h"
+#include "exception.h"
 
 using boost::shared_ptr;
 using namespace std;
@@ -46,7 +47,7 @@ ScoreType ScoreTypeFromString(const string& st) {
     return BLEU_minus_TER_over_2;
   if (sl == "meteor")
     return METEOR;
-  cerr << "Don't understand score type '" << st << "', defaulting to ibm_bleu.\n";
+  UTIL_THROW(IllegalStateException, "Don't understand score type '" << st);
   return IBM_BLEU;
 }
 
@@ -174,6 +175,7 @@ class BLEUScore : public ScoreBase<BLEUScore> {
         correct_ngram_hit_counts[i] != 0) return false;
     return true;
   }
+  virtual bool HasValidStats() const;
  private:
   int N() const {
     return hyp_ngram_counts.size();
@@ -409,19 +411,36 @@ ScoreP SentenceScorer::CreateScoreFromString(const ScoreType type, const string&
   }
 }
 
+bool BLEUScore::HasValidStats() const {
+  bool valid_score = true;
+  for(unsigned i=0; i<4; ++i) {
+    if(correct_ngram_hit_counts[i] < 0 || hyp_ngram_counts[i] < 0) {
+      valid_score = false;
+    }
+  }
+  return valid_score;
+}
+
 void BLEUScore::ScoreDetails(string* details) const {
   char buf[2000];
   vector<float> precs(max(N(),4));
   float bp;
-  float bleu = ComputeScore(&precs, &bp);
+  float bleu = 0.0;
+  if(HasValidStats()) {
+    bleu = ComputeScore(&precs, &bp);
+  }
   for (int i=N();i<4;++i)
     precs[i]=0.;
-  sprintf(buf, "BLEU = %.2f, %.1f|%.1f|%.1f|%.1f (brev=%.3f)",
+  sprintf(buf, "BLEU = %.2f, %.1f|%.1f|%.1f|%.1f %.0f/%.0f|%.0f/%.0f|%.0f/%.0f|%.0f/%.0f (brev=%.3f)",
        bleu*100.0,
        precs[0]*100.0,
        precs[1]*100.0,
        precs[2]*100.0,
        precs[3]*100.0,
+       correct_ngram_hit_counts[0], hyp_ngram_counts[0],
+       correct_ngram_hit_counts[1], hyp_ngram_counts[1],
+       correct_ngram_hit_counts[2], hyp_ngram_counts[2],
+       correct_ngram_hit_counts[3], hyp_ngram_counts[3],
        bp);
   *details = buf;
 }
@@ -430,12 +449,20 @@ float BLEUScore::ComputeScore(vector<float>* precs, float* bp) const {
   float log_bleu = 0;
   if (precs) precs->clear();
   int count = 0;
+
   vector<float> total_precs(N());
   for (int i = 0; i < N(); ++i) {
     if (hyp_ngram_counts[i] > 0) {
       float cor_count = correct_ngram_hit_counts[i];
       // smooth bleu
       if (!cor_count) { cor_count = 0.01; }
+
+      // do some paranoid sanity checking
+      // NOTE: Be careful to only use << this when it's guaranteed not to call ComputeScore again (to prevent a stack overflow)
+      if(cor_count < 0) UTIL_THROW(IllegalStateException, "ComputeScore(): Cannot compute score given stats for order " << i << ": " << cor_count << "/" << hyp_ngram_counts[i] << "; stats are " << *this);
+      if(hyp_ngram_counts[i] < 0) UTIL_THROW(IllegalStateException, "ComputeScore(): Cannot compute score given stats for order " << i << ": " << cor_count << "/" << hyp_ngram_counts[i] << "; stats are " << *this);      
+
+
       float lprec = log(cor_count) - log(hyp_ngram_counts[i]);
       if (precs) precs->push_back(exp(lprec));
       log_bleu += lprec;
@@ -443,12 +470,14 @@ float BLEUScore::ComputeScore(vector<float>* precs, float* bp) const {
     }
     total_precs[i] = log_bleu;
   }
+
   vector<float> bleus(N());
   float lbp = 0.0;
   if (hyp_len < ref_len)
     lbp = (hyp_len - ref_len) / hyp_len;
   log_bleu += lbp;
   if (bp) *bp = exp(lbp);
+
   float wb = 0;
   for (int i = 0; i < N(); ++i) {
     bleus[i] = exp(total_precs[i] / (i+1) + lbp);
@@ -456,6 +485,7 @@ float BLEUScore::ComputeScore(vector<float>* precs, float* bp) const {
   }
   //return wb;
   return bleus.back();
+  //return exp(log_bleu);
 }
 
 
@@ -507,6 +537,15 @@ void BLEUScore::PlusEquals(const Score& delta) {
   hyp_ngram_counts += d.hyp_ngram_counts;
   ref_len += d.ref_len;
   hyp_len += d.hyp_len;
+
+  for(unsigned i=0; i<correct_ngram_hit_counts.size(); ++i) {
+    if(correct_ngram_hit_counts[i] < 0) {
+      cerr << "WARNING: correct_ngram_hit_counts[" << i << "] = " << correct_ngram_hit_counts[i] << endl;
+    }
+    if(hyp_ngram_counts[i] < 0) {
+      cerr << "WARNING: hyp_ngram_counts[" << i << "] = " << hyp_ngram_counts[i] << endl;
+    }
+  }
 }
 
 void BLEUScore::TimesEquals(float scale) {
