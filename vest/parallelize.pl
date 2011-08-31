@@ -259,8 +259,11 @@ $cdcmd$sentclient $host:$port:$key $cmd
     my $livejobs;
     while (1) {
       $ret = waitpid($pid, WNOHANG);
-      #print STDERR "waitpid $pid ret = $ret \n";
-      last if ($ret != 0);
+      if($ret != 0) {
+	  print STDERR "ERROR: parallelize.pl child process exited with return code $ret\n";
+	  # don't wait for other children, fail quickly
+	  exit(1);
+      }
       $livejobs = numof_live_jobs();
       if ($numnodes >= $livejobs ) {  # a client terminated, OR # lines of input was less than -j
         print STDERR "num of requested nodes = $numnodes; num of currently live jobs = $livejobs; Client terminated - launching another.\n";
@@ -270,7 +273,13 @@ $cdcmd$sentclient $host:$port:$key $cmd
       }
     }
   }
-  waitpid($pid, 0);
+  my $ret = waitpid($pid, 0);
+  if($ret != 0) {
+      print STDERR "ERROR: parallelize.pl child process exited with return code $ret\n";
+      # don't wait for other children, fail quickly
+      exit(1);
+  }
+
   cleanup();
 } else {
 #  my $todo = "$sentserver -k $key $multiflag $port ";
@@ -347,10 +356,9 @@ sub launch_job_fork {
     my ($fh, $scr_name) = get_temp_script();
     print $fh $script;
     close $fh;
-    my $todo = "/bin/bash -xeo pipefail $scr_name 1> $outfile 2> $errorfile";
+    my $todo = "/bin/bash -auxeo pipefail $scr_name 1> $outfile 2> $errorfile";
     print STDERR "EXEC: $todo\n";
-    my $out = check_output("$todo");
-    print STDERR "RES: $out\n";
+    check_call_log("$errorfile", "$todo");
     unlink $scr_name or warn "Failed to remove $scr_name";
     exit 0;
   }
