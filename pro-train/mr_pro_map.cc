@@ -172,7 +172,7 @@ void ParseSparseVector(string& line, size_t cur, SparseVector<double>* out) {
 }
 
 void ReadKBest(const string& file, vector<HypInfo>* kbest) {
-  cerr << "Reading from " << file << endl;
+  //cerr << "Reading from " << file << endl;
   ReadFile rf(file);
   istream& in = *rf.stream();
   string cand;
@@ -184,11 +184,11 @@ void ReadKBest(const string& file, vector<HypInfo>* kbest) {
     TD::ConvertSentence(cand, &kbest->back().hyp);
     ParseSparseVector(feats, 0, &kbest->back().x);
   }
-  cerr << "  read " << kbest->size() << " hypotheses\n";
+  //cerr << "  read " << kbest->size() << " hypotheses\n";
 }
 
 void Dedup(vector<HypInfo>* h) {
-  cerr << "Dedup in=" << h->size();
+  // cerr << "Dedup in=" << h->size();
   tr1::unordered_set<HypInfo, HypInfoHasher, HypInfoCompare> u;
   while(h->size() > 0) {
     u.insert(h->back());
@@ -199,7 +199,7 @@ void Dedup(vector<HypInfo>* h) {
     h->push_back(*it);
     it = u.erase(it);
   }
-  cerr << "  out=" << h->size() << endl;
+  //cerr << "  out=" << h->size() << endl;
 }
 
 struct ThresholdAlpha {
@@ -324,8 +324,10 @@ int main(int argc, char** argv) {
     vector<HypInfo> J_i;
     os << kbest_repo << "/kbest." << sent_id << ".txt.gz";
     const string kbest_file = os.str();
+    // read k-best hypotheses from previous iterations
     if (FileExists(kbest_file))
       ReadKBest(kbest_file, &J_i);
+    // extract k-best for this iteration
     HypergraphIO::ReadFromJSON(rf.stream(), &hg);
     hg.Reweight(weights);
     KBest::KBestDerivations<vector<WordID>, ESentenceTraversal> kbest(hg, kbest_size);
