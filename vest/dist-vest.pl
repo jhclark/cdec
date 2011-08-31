@@ -38,6 +38,7 @@ die "Can't find $libcall" unless -e $libcall;
 my $decoder = $cdec;
 my $lines_per_mapper = 400;
 my $rand_directions = 15;
+my $keep_temp = 0;
 my $iteration = 1;
 my $run_local = 0;
 my $best_weights;
@@ -52,7 +53,7 @@ my $help = 0;
 my $epsilon = 0.0001;
 my $interval = 5;
 my $dryrun = 0;
-my $last_score = -10000000;
+my $last_score = 0;
 my $metric = "ibm_bleu";
 my $dir;
 my $iniFile;
@@ -84,6 +85,7 @@ if (GetOptions(
 	"help" => \$help,
 	"interval" => \$interval,
 	"iteration=i" => \$iteration,
+	"keep-temp" => \$keep_temp,
 	"local" => \$run_local,
 	"use-make=i" => \$use_make,
 	"max-iterations=i" => \$max_iterations,
@@ -118,8 +120,6 @@ if ($usefork) { $usefork = "--use-fork"; } else { $usefork = ''; }
 
 if ($metric =~ /^(combi|ter)$/i) {
   $lines_per_mapper = 40;
-} elsif ($metric =~ /^meteor$/i) {
-  $lines_per_mapper = 2000;   # start up time is really high
 }
 
 ($iniFile) = @ARGV;
@@ -290,13 +290,13 @@ while (1){
 	}
 	my $cmd = "$pcmd $decoder_cmd 2> $decoderLog 1> $runFile";
 	print STDERR "COMMAND:\n$cmd\n";
-	check_bash_call($cmd);
+	check_bash_call_log("$decoderLog", "$cmd");
         my $num_hgs;
         my $num_topbest;
         my $retries = 0;
 	while($retries < 5) {
-	    $num_hgs = check_output("ls $dir/hgs/*.gz | wc -l");
-	    $num_topbest = check_output("wc -l < $runFile");
+	    chomp($num_hgs = check_output("ls $dir/hgs/*.gz | wc -l"));
+	    chomp($num_topbest = check_output("wc -l < $runFile"));
 	    print STDERR "NUMBER OF HGs: $num_hgs\n";
 	    print STDERR "NUMBER OF TOP-BEST HYPs: $num_topbest\n";
 	    if($devSize == $num_hgs && $devSize == $num_topbest) {
@@ -307,7 +307,8 @@ while (1){
 	    }
 	    $retries++;
 	}
-	die "Dev set contains $devSize sentences, but we don't have topbest and hypergraphs for all these! Decoder failure? Check $decoderLog\n" if ($devSize != $num_hgs || $devSize != $num_topbest);
+	unchecked_call("cat >&2 $decoderLog");
+	die "Dev set contains $devSize sentences, but we don't have topbest and hypergraphs for all these! We have $num_hgs hypergraphs and $num_topbest topbest. Decoder failure? Check $decoderLog (dumped above)\n" if ($devSize != $num_hgs || $devSize != $num_topbest);
 	my $dec_score = check_output("cat $runFile | $SCORER $refs_comma_sep -l $metric");
 	chomp $dec_score;
 	print STDERR "DECODER SCORE: $dec_score\n";
@@ -324,7 +325,7 @@ while (1){
 	my $score = 0;
 	my $icc = 0;
 	my $inweights="$dir/weights.$im1";
-	for (my $opt_iter=1; $opt_iter<$optimization_iters; $opt_iter++) {
+	for (my $opt_iter=1; $opt_iter<=$optimization_iters; $opt_iter++) {
 		print STDERR "\nGENERATE OPTIMIZATION STRATEGY (OPT-ITERATION $opt_iter/$optimization_iters)\n";
 		print STDERR unchecked_output("date");
 		$icc++;
@@ -335,7 +336,7 @@ while (1){
 		print STDERR "COMMAND:\n$cmd\n";
 		check_call($cmd);
 		check_call("mkdir -p $dir/splag.$im1");
-		$cmd="split -a 3 -l $lines_per_mapper $dir/agenda.$im1-$opt_iter $dir/splag.$im1/mapinput.";
+		$cmd="split -a 5 -l $lines_per_mapper $dir/agenda.$im1-$opt_iter $dir/splag.$im1/mapinput.";
 		print STDERR "COMMAND:\n$cmd\n";
 		check_call($cmd);
 		opendir(DIR, "$dir/splag.$im1") or die "Can't open directory: $!";
@@ -436,14 +437,18 @@ while (1){
 		# sort returns failure even when it doesn't fail for some reason
 		my $best=unchecked_output("$cmd"); chomp $best;
 		print STDERR "$best\n";
+		# oa is a space-delimited origin, axis pair
+		# x is the weight update along the best direction
 		my ($oa, $x, $xscore) = split /\|/, $best;
 		$score = $xscore;
+                my $psd = $score - $last_score;
 		print STDERR "PROJECTED SCORE: $score\n";
+		print STDERR "PROJECTED IMPROVEMENT: $psd\n";
+		print STDERR "PROPOSED UPDATE: $x along origin+axis: $oa\n";
 		if (abs($x) < $epsilon) {
-			print STDERR "\nOPTIMIZER: no score improvement: abs($x) < $epsilon\n";
+			print STDERR "\nOPTIMIZER: no significant weight change: abs($x) < $epsilon\n";
 			last;
 		}
-                my $psd = $score - $last_score;
                 $last_score = $score;
 		if (abs($psd) < $epsilon) {
 			print STDERR "\nOPTIMIZER: no score improvement: abs($psd) < $epsilon\n";
@@ -467,7 +472,9 @@ while (1){
 			my $v = ($ori{$k} + $axi{$k} * $x) / $norm;
 			print W "$k $v\n";
 		}
-		check_call("rm $dir/splag.$im1/*");
+		if(!$keep_temp) {
+		  check_call("rm $dir/splag.$im1/*");
+		}
 		$inweights = $finalFile;
 	}
 	$lastWeightsFile = "$dir/weights.$iteration";
@@ -628,7 +635,7 @@ Options:
 		shared-memory machines where qsub is unavailable).
 
 	--decode-nodes <I>
-		Number of decoder processes to run in parallel. [default=15]
+		Number of decoder processes to run in parallel. [default=$decode_nodes]
 
 	--decoder <decoder path>
 		Decoder binary to use.
@@ -643,9 +650,12 @@ Options:
 	--iteration <I>
 		Starting iteration number.  If not specified, defaults to 1.
 
+        --keep-temp
+                Keep temporary files around instead of deleting them.
+
 	--max-iterations <M>
 		Maximum number of iterations to run.  If not specified, defaults
-		to 10.
+		to $max_iterations.
 
 	--pass-suffix <S>
 		If the decoder is doing multi-pass decoding, the pass suffix "2",
@@ -667,9 +677,13 @@ Options:
 		After each iteration, rescale all feature weights such that feature-
 		name has a weight of 1.0.
 
+        --opt-iterations [-i] <num>
+                Number of optimizer iterations to run within each decoder iteration.
+                Defaults to $optimization_iters.
+
 	--rand-directions <num>
 		MERT will attempt to optimize along all of the principle directions,
-		set this parameter to explore other directions. Defaults to 5.
+		set this parameter to explore other directions. Defaults to $rand_directions.
 
 	--source-file <file>
 		Dev set source file.
