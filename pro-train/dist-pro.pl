@@ -13,6 +13,7 @@ my $QSUB_CMD = qsub_args(mert_memory());
 my $default_jobs = env_default_jobs();
 
 my $VEST_DIR="$SCRIPT_DIR/../vest";
+my $BINOPT_DIR="$SCRIPT_DIR/../binopt";
 require "$VEST_DIR/libcall.pl";
 
 # Default settings
@@ -25,6 +26,7 @@ die "Can't execute $FAST_SCORE" unless -x $FAST_SCORE;
 my $MAPINPUT = "$bin_dir/mr_pro_generate_mapper_input.pl";
 my $MAPPER = "$bin_dir/mr_pro_map";
 my $REDUCER = "$bin_dir/mr_pro_reduce";
+my $BINNER = "$BINOPT_DIR/make_bins.sh";
 my $parallelize = "$VEST_DIR/parallelize.pl";
 my $libcall = "$VEST_DIR/libcall.pl";
 my $sentserver = "$VEST_DIR/sentserver";
@@ -62,6 +64,12 @@ my $initial_weights;
 my $pass_suffix = '';
 my $cpbin=1;
 
+# binning additions
+my $do_binning = 0;
+my $binner_K = 2;
+my $bin_count = 10;
+my $uniq_feats_file;
+
 # regularization strength
 my $tune_regularizer = 0;
 my $reg = 500;
@@ -90,9 +98,16 @@ if (GetOptions(
 	"metric=s" => \$metric,
 	"source-file=s" => \$srcFile,
 	"workdir=s" => \$dir,
+
+	"do-binning" => \$do_binning,
+	"uniq-feats-file=s" => \$uniq_feats_file,
 ) == 0 || @ARGV!=1 || $help) {
 	print_help();
 	exit;
+}
+
+if($do_binning) {
+    die "--uniq_feats_file not specified" unless defined $uniq_feats_file;
 }
 
 die "--tune-regularizer is no longer supported with --reg-previous and --reg. Please tune manually.\n" if $tune_regularizer;
@@ -422,7 +437,11 @@ while (1){
 	if ($tune_regularizer) {
 		$cmd .= " -T -t $dev_test_file";
 	}
-        $cmd .= " > $dir/weights.$iteration";
+	if($do_binning) {
+	    $cmd .= " > $dir/weights.opt.$iteration";
+	} else {
+	    $cmd .= " > $dir/weights.$iteration";
+	}
 	print STDERR "COMMAND:\n$cmd\n";
 	check_bash_call($cmd);
 	$lastWeightsFile = "$dir/weights.$iteration";
@@ -436,6 +455,14 @@ while (1){
 		# only tune regularizer on first iteration?
 		$tune_regularizer = 0;
 	}
+
+	# Run binning, if desired
+	if($do_binning) {
+	    $cmd="$BINNER $dir/weights.opt.$iteration uniq-microbin3.probs $dir/weights.$iteration $iteration $binner_K $bin_count";
+	    print STDERR "COMMAND:\n$cmd\n";
+	    check_bash_call($cmd);
+	}
+
 	$lastPScore = $score;
 	$iteration++;
 	print STDERR "\n==========\n";
