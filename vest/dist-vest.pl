@@ -294,7 +294,7 @@ while (1){
         my $num_hgs;
         my $num_topbest;
         my $retries = 0;
-	while($retries < 5) {
+	while($retries < 50) {
 	    $num_hgs = check_output("ls $dir/hgs/*.gz | wc -l");
 	    $num_topbest = check_output("wc -l < $runFile");
 	    print STDERR "NUMBER OF HGs: $num_hgs\n";
