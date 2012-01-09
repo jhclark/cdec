@@ -353,6 +353,7 @@ while (1){
 		$mapoutput =~ s/mapinput/mapoutput/;
 		push @mapoutputs, "$dir/splag.$im1/$mapoutput";
 		$o2i{"$dir/splag.$im1/$mapoutput"} = "$dir/splag.$im1/$shard";
+		check_bash_call("mkdir -p $dir/kbest");
 		my $script = "$MAPPER -s $srcFile -l $metric $refs_comma_sep -w $inweights -K $dir/kbest < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
 		if ($use_make) {
 			my $script_file = "$dir/scripts/map.$shard";
@@ -403,6 +404,8 @@ while (1){
 	if ($use_make) {
 		print $mkfile "$dir/splag.$im1/map.done: @mkouts\n\ttouch $dir/splag.$im1/map.done\n\n";
 		close $mkfile;
+                print STDERR "Waiting 10 seconds for filesystem to catch up...\n";
+                sleep 10;
 		my $mcmd = "make -j $jobs -f $mkfilename";
 		print STDERR "\nExecuting: $mcmd\n";
 		check_call($mcmd);
@@ -431,6 +434,10 @@ while (1){
 		#my $ilines = get_lines($o2i{$mo});
 		#die "$mo: no training instances generated!" if $olines == 0;
 	}
+
+        print STDERR "Waiting 10 seconds for filesystem to catch up...\n";
+        sleep 10;
+
 	print STDERR "\nRUNNING CLASSIFIER (REDUCER)\n";
 	print STDERR unchecked_output("date");
 	$cmd="cat @dev_outs | $REDUCER -w $dir/weights.$im1 -C $reg -y $reg_previous --interpolate_with_weights $psi";
@@ -458,9 +465,8 @@ while (1){
 
 	# Run binning, if desired
 	if($do_binning) {
-	    $cmd="$BINNER $dir/weights.opt.$iteration uniq-microbin3.probs $dir/weights.$iteration $iteration $binner_K $bin_count";
-	    print STDERR "COMMAND:\n$cmd\n";
-	    check_bash_call($cmd);
+	    my $do_reopt = 1;
+	    check_bash_call("$BINNER $dir/weights.opt.$iteration $uniq_feats_file $dir/weights.$iteration $dir $iteration $binner_K $bin_count $do_reopt");
 	}
 
 	$lastPScore = $score;

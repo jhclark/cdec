@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#!/home/jhclark/prefix/bin/python
+##!/usr/bin/env python
 import sys
 import random
 
@@ -80,33 +81,44 @@ def backtrace(i, binCount, backpointer):
         return backtrace(curBinStart-1, nextBinCount, nextIdx) + [binWeight]*binSpan
 
 dp = search(0, len(weights))
-print >>sys.stderr, "Final states: {0}".format(len(dp[-1]))
+
+print >>sys.stderr, "Final states: {0} (over {1} weights)".format(len(dp[-1]), len(dp))
 #for i in range(len(dp)):
 #    for j in range(min(5,len(dp[i]))):
 #        print i, j, dp[i][j]       
 
+# Dump bin information to stderr
+# find a non-empty solution, since we're not guaranteed to have bins == MAX_BINS-1
+bestSolution = None
+bestBinCount = None
 for binCount in xrange(MAX_BINS):
-    for ((pathCost, costEst, curBinStart, backpointer), selfpointer) in sorted(zip(dp[-1][binCount], range(len(dp[-1]))))[:1]:
-        print >>sys.stderr, "Bin Count: {0};  Final cost: {1}".format(binCount, pathCost)
+    solutions = sorted(zip(dp[-1][binCount], range(len(dp[-1]))))
+    #for ((pathCost, costEst, curBinStart, backpointer), selfpointer) in sorted(zip(dp[-1][binCount], range(len(dp[-1]))))[:1]:
+    if len(solutions) > 0:
+        bestSolution = solutions[0]
+        bestBinCount = binCount
+        ((pathCost, costEst, curBinStart, backpointer), selfpointer) = solutions[0]
+        print >>sys.stderr, "Bin Count: {0};  Num solutions: {1}; Best solution cost: {2}".format(binCount, len(solutions), pathCost)
         bt = backtrace(len(dp)-1, binCount, selfpointer)
-        #print "Weights: {0}".format(bt)
-        print >>sys.stderr
-        if binCount == MAX_BINS-1:
-            binsOnly = True
-            if not binsOnly:
-                # Print a line for each original point
-                for (feat, weight) in zip(feats, bt):
-                    print "%s,%f"%(feat,weight)
-            else:
-                bins = []
-                prevWeight = None
-                for (feat, weight) in zip(feats, bt):
-                    if weight != prevWeight:
-                        bins.append( (feat, weight) )
-                        prevWeight = weight
-                # Just print the bins
-                for (feat, weight) in bins:
-                    print "%s,%f"%(feat,weight)
+    else:
+        print >>sys.stderr, "Bin Count: {0};  Num solutions: {1}".format(binCount, len(solutions))
 
-                
-
+# Print best result in final state to stdout
+# Best solution is the one for the number of bins where k>0 with the highest score
+((pathCost, costEst, curBinStart, backpointer), selfpointer) = bestSolution
+bt = backtrace(len(dp)-1, bestBinCount, selfpointer)
+binsOnly = True
+if not binsOnly:
+    # Print a line for each original point
+    for (feat, weight) in zip(feats, bt):
+        print "%s,%f"%(feat,weight)
+else:
+    bins = []
+    prevWeight = None
+    for (feat, weight) in zip(feats, bt):
+        if weight != prevWeight:
+            bins.append( (feat, weight) )
+            prevWeight = weight
+    # Just print the bins
+    for (feat, weight) in bins:
+        print "%s,%f"%(feat,weight)

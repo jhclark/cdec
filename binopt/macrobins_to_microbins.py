@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+#!/home/jhclark/prefix/bin/python
+##!/usr/bin/env python
 import sys
 
 (binFilename,) = sys.argv[1:]

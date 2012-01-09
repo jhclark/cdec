@@ -1,5 +1,8 @@
-#!/usr/bin/env python
+#!/home/jhclark/prefix/bin/python
+##!/usr/bin/env python
 import sys
+
+print >>sys.stderr, "Performing smoothing (removing noisy data points)..."
 
 print sys.stdin.next(),
 

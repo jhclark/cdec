@@ -186,7 +186,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
     cerr << cll << " (REG=" << reg << ")\tPPL=" << ppl << "\t TEST_PPL=" << tppl << "\t" << endl;
     try {
       // remove fixed parameters from gradient
-      bool fixed_passthrough = false;
+      bool fixed_passthrough = true;
       if(fixed_passthrough) {
         cerr << "Fixing passthrough penalty" << endl;
         const int passthrough_fid = FD::Convert("PassThrough");

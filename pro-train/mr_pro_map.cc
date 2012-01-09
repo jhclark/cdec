@@ -2,6 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <algorithm>
 #include <tr1/unordered_map>
 
 #include <boost/functional/hash.hpp>
@@ -234,6 +235,7 @@ struct DiffOrder {
 };
 
 void Sample(const unsigned gamma, const unsigned xi, const vector<HypInfo>& J_i, const SentenceScorer& scorer, const bool invert_score, vector<TrainingInstance>* pv) {
+
   vector<TrainingInstance> v1, v2;
   float avg_diff = 0;
   for (unsigned i = 0; i < gamma; ++i) {
@@ -248,6 +250,7 @@ void Sample(const unsigned gamma, const unsigned xi, const vector<HypInfo>& J_i,
     if (!gdiff) continue;
     avg_diff += gdiff;
     SparseVector<weight_t> xdiff = (J_i[a].x - J_i[b].x).erase_zeros();
+
     if (xdiff.empty()) {
       cerr << "Empty diff:\n  " << TD::GetString(J_i[a].hyp) << endl << "x=" << J_i[a].x << endl;
       cerr << "  " << TD::GetString(J_i[b].hyp) << endl << "x=" << J_i[b].x << endl;
@@ -262,23 +265,37 @@ void Sample(const unsigned gamma, const unsigned xi, const vector<HypInfo>& J_i,
   }
   avg_diff /= v1.size();
 
-  for (unsigned i = 0; i < v1.size(); ++i) {
-    double p = 1.0 / (1.0 + exp(-avg_diff - v1[i].gdiff));
-    // cerr << "avg_diff=" << avg_diff << "  gdiff=" << v1[i].gdiff << "  p=" << p << endl;
-    if (rng->next() < p) v2.push_back(v1[i]);
-  }
-  vector<TrainingInstance>::iterator mid = v2.begin() + xi;
-  if (xi > v2.size()) mid = v2.end();
-  partial_sort(v2.begin(), mid, v2.end(), DiffOrder());
-  copy(v2.begin(), mid, back_inserter(*pv));
-#ifdef DEBUGGING_PRO
-  if (v2.size() >= 5) {
-    for (int i =0; i < (mid - v2.begin()); ++i) {
-      cerr << v2[i] << endl;
+  bool uniform_sampling = true;
+  if(uniform_sampling) {
+    // TODO: Do we even need to shuffle here?
+    std::random_shuffle(v1.begin(), v1.end());
+
+    vector<TrainingInstance>::iterator mid = v1.begin() + xi;
+    if (xi > v1.size()) {
+      mid = v1.end();
     }
-    cerr << pv->back() << endl;
-  }
+    copy(v1.begin(), mid, back_inserter(*pv));
+
+  } else {
+    for (unsigned i = 0; i < v1.size(); ++i) {
+      // TODO: Make this an option
+      double p = 1.0 / (1.0 + exp(-avg_diff - v1[i].gdiff));
+      // cerr << "avg_diff=" << avg_diff << "  gdiff=" << v1[i].gdiff << "  p=" << p << endl;
+      if (rng->next() < p) v2.push_back(v1[i]);
+    }
+    vector<TrainingInstance>::iterator mid = v2.begin() + xi;
+    if (xi > v2.size()) mid = v2.end();
+    partial_sort(v2.begin(), mid, v2.end(), DiffOrder());
+    copy(v2.begin(), mid, back_inserter(*pv));
+#ifdef DEBUGGING_PRO
+    if (v2.size() >= 5) {
+      for (int i =0; i < (mid - v2.begin()); ++i) {
+        cerr << v2[i] << endl;
+      }
+      cerr << pv->back() << endl;
+    }
 #endif
+  }
 }
 
 int main(int argc, char** argv) {
@@ -304,7 +321,9 @@ int main(int argc, char** argv) {
   vector<weight_t> weights;
   Weights::InitFromFile(weightsf, &weights);
   string kbest_repo = conf["kbest_repository"].as<string>();
-  MkDirP(kbest_repo);
+  // this has been moved out into dist_pro.pl
+  // This can cause an abort on Lustre due to race conditions
+  //MkDirP(kbest_repo);
   while(in) {
     vector<TrainingInstance> v;
     string line;
@@ -338,10 +357,10 @@ int main(int argc, char** argv) {
     Sample(gamma, xi, J_i, *ds[sent_id], (type == TER), &v);
     for (unsigned i = 0; i < v.size(); ++i) {
       const TrainingInstance& vi = v[i];
+      // TODO: Append sent_id and hyp ranks (these may no longer be meaningful)... or just metric scores.
       cout << vi.y << "\t" << vi.x << endl;
       cout << (!vi.y) << "\t" << (vi.x * -1.0) << endl;
     }
   }
   return 0;
 }
-
