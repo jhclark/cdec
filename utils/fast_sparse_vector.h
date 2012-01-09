@@ -129,6 +129,7 @@ class FastSparseVector {
             data_.local[j-1].first() = data_.local[j].first();
             data_.local[j-1].second() = data_.local[j].second();
           }
+	  --local_size_;
         }
       }
     }
