@@ -1,3 +1,4 @@
+#if 0
 #include "ff_jlm.h"
 
 #include <cstring>
@@ -735,3 +736,5 @@ boost::shared_ptr<FeatureFunction> JLanguageModelFactory::Create(std::string par
 std::string  JLanguageModelFactory::usage(bool params,bool verbose) const {
   return JLanguageModel<lm::ngram::Model>::usage(params, verbose);
 }
+
+#endif
