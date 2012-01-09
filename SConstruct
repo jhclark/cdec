@@ -31,6 +31,11 @@ env = Environment(PREFIX=GetOption('prefix'),
                       LIBS = Split('boost_program_options boost_serialization boost_thread z'),
 		      CCFLAGS=Split('-g -DHAVE_SCONS'))
 
+import os.path
+import shutil
+if not os.path.exists('config.h'):
+    shutil.copy('config.h.scons', 'config.h')
+
 if GetOption('debug'):
     env.Append(CCFLAGS=Split('-O0'),
                LIBS=Split("SegFault"))
