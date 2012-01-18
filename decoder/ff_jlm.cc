@@ -13,6 +13,7 @@
 #include "tdict.h"
 #include "lm/model.hh"
 #include "lm/enumerate_vocab.hh"
+#include "murmur_hash.h"
 
 using namespace std;
 
@@ -39,19 +40,17 @@ void load_file_into_vec(const string& filename, vector<string>* conjoin_with_fea
 // -C@file : specify file with list of names to conjoin with
 // -D : disable single feature (in favor of using only conjoined features)
 // -L : Conjoin with match length (note: this is itself a non-local feature)
-// -J : Discriminative LM mode
+// -d : Discriminative LM mode
 bool ParseLMArgs(string const& in, string* filename, string* mapfile, bool* explicit_markers, string* featname,
 		 vector<int>* conjoin_with_fids, vector<int>* conjoined_fids, bool* conjoin_with_length,
-		 bool* enable_main_feat, bool* disc_mode, string* count_bin_file, string* context_bin_file) {
+		 bool* enable_main_feat, string* disc_lm_file) {
   vector<string> const& argv=SplitOnWhitespace(in);
   *explicit_markers = false;
   *featname="JLanguageModel";
   *mapfile = "";
   *enable_main_feat = true;
   *conjoin_with_length = false;
-  *disc_mode = false;
-  *count_bin_file = "";
-  *context_bin_file = "";
+  *disc_lm_file = "";
 #define LMSPEC_NEXTARG if (i==argv.end()) {            \
     cerr << "Missing argument for "<<*last<<". "; goto usage; \
     } else { ++i; }
@@ -74,10 +73,8 @@ bool ParseLMArgs(string const& in, string* filename, string* mapfile, bool* expl
       case 'D':
 	    *enable_main_feat = false;
 	    break;
-      case 'J':
-	    *disc_mode = true;
-        LMSPEC_NEXTARG; *count_bin_file=*i;
-        LMSPEC_NEXTARG; *context_bin_file=*i;
+      case 'd':
+	    *disc_lm_file = true;
 	    break;
       case 'L':
     	*conjoin_with_length = true;
@@ -505,64 +502,25 @@ class JLanguageModelImpl {
 		     const vector<int>& conjoined_fids,
 		     bool conjoin_with_length,
 		     bool enable_main_feat,
-		     bool disc_mode,
-		     string count_bin_file,
-		     string context_bin_file) :
+		     const string& disc_lm_file) :
       kCDEC_UNK(TD::Convert("<unk>")) ,
       add_sos_eos_(!explicit_markers),
       fid_(fid),
       enable_main_feat_(enable_main_feat),
-      disc_mode_(disc_mode) {
-    {
+      disc_mode_(disc_lm_file != "") {
+
+	if(disc_mode_){
+		LoadDiscLM(disc_lm_file);
+	} else {
       VMapper vm(&cdec2klm_map_);
       lm::ngram::Config conf;
       conf.enumerate_vocab = &vm;
       ngram_ = new Model(filename.c_str(), conf);
+
+      order_ = ngram_->Order();
+      cerr << "Loaded " << order_ << "-gram KLM from " << filename << " (MapSize=" << cdec2klm_map_.size() << ")\n";
     }
-    order_ = ngram_->Order();
-    cerr << "Loaded " << order_ << "-gram KLM from " << filename << " (MapSize=" << cdec2klm_map_.size() << ")\n";
-    
-    if(disc_mode) {
-    	// precompute features for discriminative language model
-    	vector<string> count_bin_names;
-    	vector<string> context_bin_names;
-    	load_file_into_vec(count_bin_file, &count_bin_names);
-    	load_file_into_vec(context_bin_file, &context_bin_names);
 
-    	// TODO: Move to inst variable
-    	disc_feats_.reserve(order_+1);
-    	disc_feats_.resize(order_+1);
-    	for(int match_len=0; match_len<=order_; ++match_len) {
-    		vector<vector<vector<int> > >& match_len_vec = disc_feats_.at(match_len);
-
-    		if(match_len == 0) {
-    			// there is no count bin -- we've never seen this token
-    			const string first_name = featname + "_UNK";
-    			match_len_vec.resize(1);
-    			vector<vector<int> >& count_bin_zero = match_len_vec.at(0); // use 0th count bin
-    			count_bin_zero.resize(1);
-    			spawn_disc_feats(first_name, context_bin_names, &count_bin_zero);
-    		} else {
-        		match_len_vec.resize(count_bin_names.size());
-				for(int iCountBin=0; iCountBin < count_bin_names.size(); ++iCountBin) {
-					const string& count_bin_name = count_bin_names.at(iCountBin);
-					const string first_name = featname + "_Len" + boost::lexical_cast<std::string>(match_len) + "_Count" + count_bin_name;
-
-	    			vector<vector<int> >& count_bin_i = match_len_vec.at(iCountBin); // use ith count bin
-	    			count_bin_i.resize(order_);
-
-					// if we matched the entire LM window, there is no context in scope
-	    			// so skip adding a context length and count
-		    		if(match_len != order_) {
-		    			spawn_disc_feats(first_name, context_bin_names, &count_bin_i);
-		    		} else {
-		    			vector<int>& context_len_zero = count_bin_i.at(0); // pretend context len is zero
-		    			context_len_zero.push_back(FD::Convert(first_name)); // 0th bin of zero len context is just this feature
-		    		}
-				}
-    		}
-    	}
-    }
 
     if(conjoin_with_length) {
       for(unsigned i=0; i<=order_; ++i) {
@@ -608,50 +566,69 @@ class JLanguageModelImpl {
       LoadWordClasses(mapfile);
   }
 
-  void spawn_disc_feats(const string& first_name, const vector<string>& context_bin_names, vector<vector<int> >* context_disc_feats) {
+  void LoadDiscLM(const string& file) {
+	    ReadFile rf(file);
+	    istream& in = *rf.stream();
+	    string line;
+	    cerr << "  Loading discriminative LM features from " << file << " ...\n";
+	    while(in) {
+	      getline(in, line);
+	      if (!in) continue;
 
-		// TODO: context_len=0 is special case -- we will have no count bin
-		// we will never have a context of size order_ since the match will have used >= 1 token
-		for(int context_len=0; context_len<order_; ++context_len) {
-		  vector<int>& context_vec = context_disc_feats->at(context_len);
+	      // XXX: I'm a terrible person for using const_cast
+	      char* ngram = strtok(const_cast<char*>(line.c_str()), "\t");
+	      char* feats = strtok(NULL, "\t");
+	      char* backoff_feats = strtok(NULL, "\t");
 
-		  if(context_len == 0) {
-			// there is no count bin -- we've never seen this context token
-			const string disc_feat_name = first_name + "_ConUNK";
-			context_vec.push_back(FD::Convert(disc_feat_name));
-		  } else {
-			context_vec.reserve(context_bin_names.size());
-			for(int iContextBin=1; iContextBin < context_bin_names.size(); ++iContextBin) {
-				const string& context_bin_name = context_bin_names.at(iContextBin);
-				const string disc_feat_name = first_name
-						+ "_PrevLen" + boost::lexical_cast<std::string>(context_len) + "_PrevConCount" + context_bin_name;
-				context_vec.push_back(FD::Convert(disc_feat_name));
-			}
-		  }
-		}
+	      char* tok = strtok(ngram, " ");
+	      vector<int> toks;
+	      while(tok != NULL) {
+			int wid = TD::Convert(string(tok)); // ugh, copy
+			toks.push_back(wid);
+			tok = strtok(NULL, " ");
+	      }
+	      uint64_t hash = MurmurHash64((void*) toks.begin(), (int) ((void*)toks.end() - (void*)toks.begin()));
+
+	      vector<int>& feat_vec = disc_feats_[hash];
+	      vector<int>& backoff_feats_vec = disc_feats_[hash];
+
+	      char* feat = strtok(feats, " ");
+	      while(feat != NULL) {
+			int fid = FD::Convert(string(feat)); // ugh, copy
+			feat_vec.push_back(fid);
+			feat = strtok(NULL, " ");
+	      }
+
+	      feat = strtok(backoff_feats, " ");
+	      while(feat != NULL) {
+			int fid = FD::Convert(string(feat)); // ugh, copy
+			backoff_feats_vec.push_back(fid);
+			feat = strtok(NULL, " ");
+	      }
+	    }
   }
 
   void LoadWordClasses(const string& file) {
-    ReadFile rf(file);
-    istream& in = *rf.stream();
-    string line;
-    vector<WordID> dummy;
-    int lc = 0;
-    cerr << "  Loading word classes from " << file << " ...\n";
-    AddWordToClassMapping_(TD::Convert("<s>"), TD::Convert("<s>"));
-    AddWordToClassMapping_(TD::Convert("</s>"), TD::Convert("</s>"));
-    while(in) {
-      getline(in, line);
-      if (!in) continue;
-      dummy.clear();
-      TD::ConvertSentence(line, &dummy);
-      ++lc;
-      if (dummy.size() != 2) {
-        cerr << "    Format error in " << file << ", line " << lc << ": " << line << endl;
-        abort();
-      }
-      AddWordToClassMapping_(dummy[0], dummy[1]);
-    }
+	    ReadFile rf(file);
+	    istream& in = *rf.stream();
+	    string line;
+	    vector<WordID> dummy;
+	    int lc = 0;
+	    cerr << "  Loading word classes from " << file << " ...\n";
+	    AddWordToClassMapping_(TD::Convert("<s>"), TD::Convert("<s>"));
+	    AddWordToClassMapping_(TD::Convert("</s>"), TD::Convert("</s>"));
+	    while(in) {
+	      getline(in, line);
+	      if (!in) continue;
+	      dummy.clear();
+	      TD::ConvertSentence(line, &dummy);
+	      ++lc;
+	      if (dummy.size() != 2) {
+	        cerr << "    Format error in " << file << ", line " << lc << ": " << line << endl;
+	        abort();
+	      }
+	      AddWordToClassMapping_(dummy[0], dummy[1]);
+	    }
   }
 
   void AddWordToClassMapping_(WordID word, WordID cls) {
@@ -678,8 +655,6 @@ class JLanguageModelImpl {
   lm::WordIndex kSOS_;  // <s> - requires special handling.
   lm::WordIndex kEOS_;  // </s>
   Model* ngram_;
-  boost::unordered_map<uint64_t, vector<int> > disc_feats_;
-  boost::unordered_map<uint64_t, vector<int> > disc_backoff_feats_;
   const bool add_sos_eos_; // flag indicating whether the hypergraph produces <s> and </s>
                      // if this is true, FinalTransitionFeatures will "add" <s> and </s>
                      // if false, FinalTransitionFeatures will score anything with the
@@ -710,7 +685,8 @@ class JLanguageModelImpl {
 
   // for the discriminative LM
   bool disc_mode_;
-  vector< vector< vector< vector<int> > > > disc_feats_;
+  boost::unordered_map<uint64_t, vector<int> > disc_feats_;
+  boost::unordered_map<uint64_t, vector<int> > disc_backoff_feats_;
 };
 
 template <class Model>
@@ -721,11 +697,9 @@ JLanguageModel<Model>::JLanguageModel(const string& param) {
   vector<int> conjoined_fids;
   bool conjoin_with_length;
   bool enable_main_feat;
-  bool disc_mode;
-  string count_bin_file;
-  string context_bin_file;
+  string disc_lm_file;
   if (!ParseLMArgs(param, &filename, &mapfile, &explicit_markers, &featname, &conjoin_with_fids, &conjoined_fids, &conjoin_with_length,
-		  	  &enable_main_feat, &disc_mode, &count_bin_file, &context_bin_file)) {
+		  	  &enable_main_feat, &disc_lm_file)) {
     abort();
   }
 
@@ -733,7 +707,7 @@ JLanguageModel<Model>::JLanguageModel(const string& param) {
 
   try {
     pimpl_ = new JLanguageModelImpl<Model>(filename, mapfile, explicit_markers, fid_, featname, conjoin_with_fids, conjoined_fids, conjoin_with_length,
-    		enable_main_feat, disc_mode, count_bin_file, context_bin_file);
+    		enable_main_feat, disc_lm_file);
   } catch (std::exception &e) {
     std::cerr << e.what() << std::endl;
     abort();
@@ -804,11 +778,9 @@ boost::shared_ptr<FeatureFunction> JLanguageModelFactory::Create(std::string par
   vector<int> conjoined_fids; // unused
   bool conjoin_with_length; // unused
   bool enable_main_feat; // unused
-  bool disc_mode; // unused
-  string count_bin_file; // unused
-  string context_bin_file; // unused
+  string disc_lm_file;
   ParseLMArgs(param, &filename, &ignored_map, &ignored_markers, &ignored_featname, &conjoin_with_fids, &conjoined_fids, &conjoin_with_length,
-		  &enable_main_feat, &disc_mode, &count_bin_file, &context_bin_file);
+		  &enable_main_feat, &disc_lm_file);
   ModelType m;
   if (!RecognizeBinary(filename.c_str(), m)) m = HASH_PROBING;
 
