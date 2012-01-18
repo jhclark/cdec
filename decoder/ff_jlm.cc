@@ -1,4 +1,3 @@
-#if 0
 #include "ff_jlm.h"
 
 #include <cstring>
@@ -6,6 +5,7 @@
 
 #include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/unordered_map.hpp>
 
 #include "filelib.h"
 #include "stringlib.h"
@@ -23,21 +23,35 @@ static const unsigned char MASK             = 7;
 typedef unsigned short conj_fid;
 static const conj_fid END_OF_CONJ_VEC = 0;
 
+void load_file_into_vec(const string& filename, vector<string>* conjoin_with_feats) {
+    ReadFile in_read(filename);
+    istream & in = *in_read.stream();
+    string line;
+    while(getline(in, line)){
+        if(!line.empty())
+            conjoin_with_feats->push_back(line);
+    }
+}
+
 // -x : rules include <s> and </s>
 // -n NAME : feature id is NAME
 // -C conjoin_with_name : conjoined features must be *rule* features
 // -C@file : specify file with list of names to conjoin with
 // -D : disable single feature (in favor of using only conjoined features)
 // -L : Conjoin with match length (note: this is itself a non-local feature)
+// -J : Discriminative LM mode
 bool ParseLMArgs(string const& in, string* filename, string* mapfile, bool* explicit_markers, string* featname,
 		 vector<int>* conjoin_with_fids, vector<int>* conjoined_fids, bool* conjoin_with_length,
-		 bool* enable_main_feat) {
+		 bool* enable_main_feat, bool* disc_mode, string* count_bin_file, string* context_bin_file) {
   vector<string> const& argv=SplitOnWhitespace(in);
   *explicit_markers = false;
   *featname="JLanguageModel";
   *mapfile = "";
   *enable_main_feat = true;
   *conjoin_with_length = false;
+  *disc_mode = false;
+  *count_bin_file = "";
+  *context_bin_file = "";
 #define LMSPEC_NEXTARG if (i==argv.end()) {            \
     cerr << "Missing argument for "<<*last<<". "; goto usage; \
     } else { ++i; }
@@ -58,22 +72,21 @@ bool ParseLMArgs(string const& in, string* filename, string* mapfile, bool* expl
         LMSPEC_NEXTARG; *featname=*i;
         break;
       case 'D':
-	*enable_main_feat = false;
-	break;
+	    *enable_main_feat = false;
+	    break;
+      case 'J':
+	    *disc_mode = true;
+        LMSPEC_NEXTARG; *count_bin_file=*i;
+        LMSPEC_NEXTARG; *context_bin_file=*i;
+	    break;
       case 'L':
-	*conjoin_with_length = true;
-	break;
+    	*conjoin_with_length = true;
+    	break;
       case 'C':
         LMSPEC_NEXTARG;
 	if( (*i)[0] == '@' ) { // read feature names from file?
-	  const string filename = i->substr(1);
-	  ReadFile in_read(filename);
-	    istream &in=*in_read.stream();
-	    string line;
-	    while(getline(in, line)) {
-	      if (!line.empty())
-		conjoin_with_feats.push_back(line);
-	    }
+	    const string filename = i->substr(1);
+        load_file_into_vec(filename, &conjoin_with_feats);
 	} else {
 	  conjoin_with_feats.push_back(*i);
 	}
@@ -124,7 +137,7 @@ string JLanguageModel<Model>::usage(bool /*param*/,bool /*verbose*/) {
   return "JLanguageModel";
 }
 
-struct VMapper : public lm::ngram::EnumerateVocab {
+struct VMapper : public lm::EnumerateVocab {
   VMapper(vector<lm::WordIndex>* out) : out_(out), kLM_UNKNOWN_TOKEN(0) { out_->clear(); }
   void Add(lm::WordIndex index, const StringPiece &str) {
     const WordID cdec_id = TD::Convert(str.as_string());
@@ -491,11 +504,15 @@ class JLanguageModelImpl {
 		     const vector<int>& conjoin_with_fids,
 		     const vector<int>& conjoined_fids,
 		     bool conjoin_with_length,
-		     bool enable_main_feat) :
+		     bool enable_main_feat,
+		     bool disc_mode,
+		     string count_bin_file,
+		     string context_bin_file) :
       kCDEC_UNK(TD::Convert("<unk>")) ,
       add_sos_eos_(!explicit_markers),
       fid_(fid),
-      enable_main_feat_(enable_main_feat) {
+      enable_main_feat_(enable_main_feat),
+      disc_mode_(disc_mode) {
     {
       VMapper vm(&cdec2klm_map_);
       lm::ngram::Config conf;
@@ -505,6 +522,48 @@ class JLanguageModelImpl {
     order_ = ngram_->Order();
     cerr << "Loaded " << order_ << "-gram KLM from " << filename << " (MapSize=" << cdec2klm_map_.size() << ")\n";
     
+    if(disc_mode) {
+    	// precompute features for discriminative language model
+    	vector<string> count_bin_names;
+    	vector<string> context_bin_names;
+    	load_file_into_vec(count_bin_file, &count_bin_names);
+    	load_file_into_vec(context_bin_file, &context_bin_names);
+
+    	// TODO: Move to inst variable
+    	disc_feats_.reserve(order_+1);
+    	disc_feats_.resize(order_+1);
+    	for(int match_len=0; match_len<=order_; ++match_len) {
+    		vector<vector<vector<int> > >& match_len_vec = disc_feats_.at(match_len);
+
+    		if(match_len == 0) {
+    			// there is no count bin -- we've never seen this token
+    			const string first_name = featname + "_UNK";
+    			match_len_vec.resize(1);
+    			vector<vector<int> >& count_bin_zero = match_len_vec.at(0); // use 0th count bin
+    			count_bin_zero.resize(1);
+    			spawn_disc_feats(first_name, context_bin_names, &count_bin_zero);
+    		} else {
+        		match_len_vec.resize(count_bin_names.size());
+				for(int iCountBin=0; iCountBin < count_bin_names.size(); ++iCountBin) {
+					const string& count_bin_name = count_bin_names.at(iCountBin);
+					const string first_name = featname + "_Len" + boost::lexical_cast<std::string>(match_len) + "_Count" + count_bin_name;
+
+	    			vector<vector<int> >& count_bin_i = match_len_vec.at(iCountBin); // use ith count bin
+	    			count_bin_i.resize(order_);
+
+					// if we matched the entire LM window, there is no context in scope
+	    			// so skip adding a context length and count
+		    		if(match_len != order_) {
+		    			spawn_disc_feats(first_name, context_bin_names, &count_bin_i);
+		    		} else {
+		    			vector<int>& context_len_zero = count_bin_i.at(0); // pretend context len is zero
+		    			context_len_zero.push_back(FD::Convert(first_name)); // 0th bin of zero len context is just this feature
+		    		}
+				}
+    		}
+    	}
+    }
+
     if(conjoin_with_length) {
       for(unsigned i=0; i<=order_; ++i) {
 	const string conjoined_name = featname + "__X__LMNgramLen" + boost::lexical_cast<std::string>(i);
@@ -549,6 +608,29 @@ class JLanguageModelImpl {
       LoadWordClasses(mapfile);
   }
 
+  void spawn_disc_feats(const string& first_name, const vector<string>& context_bin_names, vector<vector<int> >* context_disc_feats) {
+
+		// TODO: context_len=0 is special case -- we will have no count bin
+		// we will never have a context of size order_ since the match will have used >= 1 token
+		for(int context_len=0; context_len<order_; ++context_len) {
+		  vector<int>& context_vec = context_disc_feats->at(context_len);
+
+		  if(context_len == 0) {
+			// there is no count bin -- we've never seen this context token
+			const string disc_feat_name = first_name + "_ConUNK";
+			context_vec.push_back(FD::Convert(disc_feat_name));
+		  } else {
+			context_vec.reserve(context_bin_names.size());
+			for(int iContextBin=1; iContextBin < context_bin_names.size(); ++iContextBin) {
+				const string& context_bin_name = context_bin_names.at(iContextBin);
+				const string disc_feat_name = first_name
+						+ "_PrevLen" + boost::lexical_cast<std::string>(context_len) + "_PrevConCount" + context_bin_name;
+				context_vec.push_back(FD::Convert(disc_feat_name));
+			}
+		  }
+		}
+  }
+
   void LoadWordClasses(const string& file) {
     ReadFile rf(file);
     istream& in = *rf.stream();
@@ -584,7 +666,7 @@ class JLanguageModelImpl {
     word2class_map_[word] = cls;
   }
 
-  ~KLanguageModelImpl() {
+  ~JLanguageModelImpl() {
     delete ngram_;
     delete[] dummy_state_;
   }
@@ -596,6 +678,8 @@ class JLanguageModelImpl {
   lm::WordIndex kSOS_;  // <s> - requires special handling.
   lm::WordIndex kEOS_;  // </s>
   Model* ngram_;
+  boost::unordered_map<uint64_t, vector<int> > disc_feats_;
+  boost::unordered_map<uint64_t, vector<int> > disc_backoff_feats_;
   const bool add_sos_eos_; // flag indicating whether the hypergraph produces <s> and </s>
                      // if this is true, FinalTransitionFeatures will "add" <s> and </s>
                      // if false, FinalTransitionFeatures will score anything with the
@@ -623,6 +707,10 @@ class JLanguageModelImpl {
   vector<int> conjoined_fids_;
   vector<int> conjoined_nonlocal_fids_;
   int conj_vec_size_;
+
+  // for the discriminative LM
+  bool disc_mode_;
+  vector< vector< vector< vector<int> > > > disc_feats_;
 };
 
 template <class Model>
@@ -633,16 +721,19 @@ JLanguageModel<Model>::JLanguageModel(const string& param) {
   vector<int> conjoined_fids;
   bool conjoin_with_length;
   bool enable_main_feat;
-  if (!ParseLMArgs(param, &filename, &mapfile, &explicit_markers, &featname, &conjoin_with_fids, &conjoined_fids, &conjoin_with_length, &enable_main_feat)) {
+  bool disc_mode;
+  string count_bin_file;
+  string context_bin_file;
+  if (!ParseLMArgs(param, &filename, &mapfile, &explicit_markers, &featname, &conjoin_with_fids, &conjoined_fids, &conjoin_with_length,
+		  	  &enable_main_feat, &disc_mode, &count_bin_file, &context_bin_file)) {
     abort();
   }
 
   fid_ = FD::Convert(featname);
-  oov_fid_ = FD::Convert(featname+"_OOV");
-  cerr << "OOV FID: " << oov_fid_ << endl;
 
   try {
-    pimpl_ = new JLanguageModelImpl<Model>(filename, mapfile, explicit_markers, fid_, featname, conjoin_with_fids, conjoined_fids, conjoin_with_length, enable_main_feat);
+    pimpl_ = new JLanguageModelImpl<Model>(filename, mapfile, explicit_markers, fid_, featname, conjoin_with_fids, conjoined_fids, conjoin_with_length,
+    		enable_main_feat, disc_mode, count_bin_file, context_bin_file);
   } catch (std::exception &e) {
     std::cerr << e.what() << std::endl;
     abort();
@@ -682,10 +773,10 @@ void JLanguageModel<Model>::TraversalFeaturesImpl(const SentenceMetadata& smeta,
 		      &oovs, &est_oovs, state);
 
   // don't conjoin the OOVs... for now
-  if (oov_fid_) {
-    if (oovs) features->set_value(oov_fid_, oovs);
-    if (est_oovs) estimated_features->set_value(oov_fid_, est_oovs);
-  }
+//  if (oov_fid_) {
+//    if (oovs) features->set_value(oov_fid_, oovs);
+//    if (est_oovs) estimated_features->set_value(oov_fid_, est_oovs);
+//  }
 }
 
 template <class Model>
@@ -694,8 +785,8 @@ void JLanguageModel<Model>::FinalTraversalFeatures(const void* ant_state,
   double oovs = 0;
   pimpl_->FinalTraversalCost(ant_state, features, &oovs);
 
-  if (oov_fid_ && oovs)
-    features->set_value(oov_fid_, oovs);
+//  if (oov_fid_ && oovs)
+//    features->set_value(oov_fid_, oovs);
 }
 
 template <class Model> boost::shared_ptr<FeatureFunction> CreateModel(const std::string &param) {
@@ -713,7 +804,11 @@ boost::shared_ptr<FeatureFunction> JLanguageModelFactory::Create(std::string par
   vector<int> conjoined_fids; // unused
   bool conjoin_with_length; // unused
   bool enable_main_feat; // unused
-  ParseLMArgs(param, &filename, &ignored_map, &ignored_markers, &ignored_featname, &conjoin_with_fids, &conjoined_fids, &conjoin_with_length, &enable_main_feat);
+  bool disc_mode; // unused
+  string count_bin_file; // unused
+  string context_bin_file; // unused
+  ParseLMArgs(param, &filename, &ignored_map, &ignored_markers, &ignored_featname, &conjoin_with_fids, &conjoined_fids, &conjoin_with_length,
+		  &enable_main_feat, &disc_mode, &count_bin_file, &context_bin_file);
   ModelType m;
   if (!RecognizeBinary(filename.c_str(), m)) m = HASH_PROBING;
 
@@ -736,5 +831,3 @@ boost::shared_ptr<FeatureFunction> JLanguageModelFactory::Create(std::string par
 std::string  JLanguageModelFactory::usage(bool params,bool verbose) const {
   return JLanguageModel<lm::ngram::Model>::usage(params, verbose);
 }
-
-#endif
