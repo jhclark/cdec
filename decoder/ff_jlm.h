@@ -9,11 +9,8 @@ using namespace std;
 #include "ff_factory.h"
 #include "ff.h"
 
-template <class Model> struct JLanguageModelImpl;
+struct JLanguageModelImpl;
 
-// the supported template types are instantiated explicitly
-// in ff_klm.cc.
-template <class Model>
 class JLanguageModel : public FeatureFunction {
  public:
   // param = "filename.lm [-o n]"
@@ -33,7 +30,7 @@ class JLanguageModel : public FeatureFunction {
                                      void* out_context) const;
  private:
   int fid_; // conceptually const; mutable only to simplify constructor
-  JLanguageModelImpl<Model>* pimpl_;
+  JLanguageModelImpl* pimpl_;
 };
 
 struct JLanguageModelFactory : public FactoryBase<FeatureFunction> {

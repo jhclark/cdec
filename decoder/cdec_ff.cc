@@ -4,6 +4,7 @@
 #include "ff_spans.h"
 #include "ff_lm.h"
 #include "ff_klm.h"
+#include "ff_jlm.h"
 #include "ff_ngrams.h"
 #include "ff_csplit.h"
 #include "ff_wordalign.h"
@@ -48,6 +49,7 @@ void register_feature_functions() {
   ff_registry.Register("RuleNgramFeatures", new FFFactory<RuleNgramFeatures>());
   ff_registry.Register("CMR2008ReorderingFeatures", new FFFactory<CMR2008ReorderingFeatures>());
   ff_registry.Register("KLanguageModel", new KLanguageModelFactory());
+  ff_registry.Register("JLanguageModel", new JLanguageModelFactory());
   ff_registry.Register("NonLatinCount", new FFFactory<NonLatinCount>);
   ff_registry.Register("RuleShape", new FFFactory<RuleShapeFeatures>);
   ff_registry.Register("RelativeSentencePosition", new FFFactory<RelativeSentencePosition>);
