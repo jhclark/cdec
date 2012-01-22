@@ -2,6 +2,8 @@
 
 #include <cstring>
 #include <iostream>
+#include <vector>
+#include <set>
 
 #include <boost/scoped_ptr.hpp>
 #include <boost/lexical_cast.hpp>
@@ -23,6 +25,9 @@ using namespace std;
 static const unsigned char HAS_FULL_CONTEXT = 1;
 static const unsigned char HAS_EOS_ON_RIGHT = 2;
 static const unsigned char MASK = 7;
+
+static const WordID LEFT_MARKER = 0x80000000;
+static const WordID REMOVE_LEFT_MARKER = 0x7FFFFFFF;
 
 typedef unsigned short conj_fid;
 #ifdef JLM_ONE_FEAT
@@ -272,6 +277,7 @@ public:
 		vector<WordID> ngram; // functions as state
 		ngram.reserve(order_);
 		//cerr << "Ngram (init):" << ngram << endl;
+                int words_since_phrase_boundary = 0;
 
 		const vector<WordID>& e = rule.e();
 		bool context_complete = false;
@@ -279,13 +285,19 @@ public:
 
 			///cerr << "Target terminal number " << j << endl;
 			if (e[j] < 1) { // handle non-terminal substitution
+                          words_since_phrase_boundary = 0;
 				const void* astate = (ant_states[-e[j]]);
 
 				// score unscored items (always on the left, since they
 				// might not have seen their full context yet)
 				int unscored_ant_len = UnscoredSize(astate);
 				for (int k = 0; k < unscored_ant_len; ++k) {
-					const int cur_word = IthUnscoredWord(k, astate);
+					const int cur_word_with_marker = IthUnscoredWord(k, astate);
+                                        const bool is_leftmost_in_phrase = cur_word_with_marker & LEFT_MARKER;
+                                        const int cur_word = cur_word_with_marker & REMOVE_LEFT_MARKER;
+                                        if(is_leftmost_in_phrase) {
+                                          words_since_phrase_boundary = 0;
+                                        }
 					//cerr << "Antecedent " << k << "(E nonterm index is " << -e[j] << "): Scoring LM Word ID " << cur_word << endl;
 					const conj_fid* conj_fid_vec = IthConjVec(k, astate);
 
@@ -321,14 +333,17 @@ public:
 					}
 					if (context_complete) {
 						//cerr << "Complete (in nonterm)" << endl;
-						FireLMFeats(features, ngram);
+                                          FireLMFeats(features, ngram, words_since_phrase_boundary);
 						FireConjFeats(features, conj_fid_vec, false);
 					} else {
-						FireLMFeats(est_features, ngram);
+                                          FireLMFeats(est_features, ngram, words_since_phrase_boundary);
 						if (remnant) {
 						  //cerr << "Storing (nonterm) Word "<<cur_word<<"in remnant at " << num_estimated << endl;
-							SetIthUnscoredWord(num_estimated, cur_word,
-									remnant);
+                                                  if(words_since_phrase_boundary == 0) {
+							SetIthUnscoredWord(num_estimated, cur_word | LEFT_MARKER, remnant);
+                                                  } else {
+							SetIthUnscoredWord(num_estimated, cur_word, remnant);
+                                                  }
 							//cerr << "Storing (nonterm) IthConjVec in remnant at " << num_estimated << endl;
 							SetIthConjVec(num_estimated, conj_fid_vec, remnant);
 						}
@@ -340,6 +355,7 @@ public:
 						ngram.erase(ngram.begin(), ngram.begin()+1);
 						//cerr << "Ngram (ant bump):" << ngram << endl;
 					}
+                                        ++words_since_phrase_boundary;
 				} // end iteration over antecedent terminals
 				saw_eos = GetFlag(astate, HAS_EOS_ON_RIGHT);
 				// if we should use the right-most terminals within this antecedent, copy them
@@ -350,6 +366,9 @@ public:
 				}
 			} else { // handle terminal
 				const WordID cur_word = ClassifyWordIfNecessary(e[j]);
+
+                                // TODO: Fire LM feature that
+                                ++words_since_phrase_boundary;
 
 				// determine which conjoined features these lexical items will contribute to
 				conj_fid conj_fid_vec[conjoined_fids_.size()];
@@ -386,17 +405,22 @@ public:
 				//cerr << "Ngram (term):" << ngram << endl;
 				if (context_complete) {
 					//cerr << "Complete (in term)" << endl;
-					FireLMFeats(features, ngram);
+                                  FireLMFeats(features, ngram, words_since_phrase_boundary);
 					FireConjFeats(features, conj_fid_vec, false);
 				} else {
 					if (remnant) {
-						SetIthUnscoredWord(num_estimated, cur_word, remnant);
+                                          if(words_since_phrase_boundary == 0) {
+                                            // use high bit as "left of phrase" indicator
+                                            SetIthUnscoredWord(num_estimated, cur_word | LEFT_MARKER, remnant);
+                                          } else {
+                                            SetIthUnscoredWord(num_estimated, cur_word, remnant);
+                                          }
 						//cerr << "Storing (term) IthConjVec in remnant at " << num_estimated << endl;
 						SetIthConjVec(num_estimated, conj_fid_vec, remnant);
 					}
 					++num_estimated;
 					//cerr << "Est (in nonterm)" << endl;
-					FireLMFeats(est_features, ngram);
+					FireLMFeats(est_features, ngram, words_since_phrase_boundary);
 					FireConjFeats(est_features, conj_fid_vec, true);
 				}
 				if(ngram.size() >= order_) {
@@ -418,7 +442,12 @@ public:
 		}
 	}
 
-	inline void FireLMFeats(SparseVector<double>* feats, const vector<WordID>& ngram) {
+  inline void FireLMFeats(SparseVector<double>* feats,
+                          const vector<WordID>& ngram,
+                          const int words_since_phrase_boundary1) {
+    
+    const int words_since_phrase_boundary = min(words_since_phrase_boundary1, order_);
+
 	  //cerr << "Scoring ngram: " << ngram << endl;
 		assert(ngram.size() <= order_);
 		bool found_match = false;
@@ -429,12 +458,17 @@ public:
 				found_match = true;
 #ifdef JLM_ONE_FEAT
 				const int feat = feat_vec_match->second.first;
-				feats->set_value(feat, 1);
+                                // TODO: XXX: Phrase cound be longer than order of LM
+                                const int bound_feat = feats_by_boundary_.at(words_since_phrase_boundary)[feat];
+				feats->set_value(bound_feat, 1);
+				//feats->set_value(feat, 1);
 #else
 				const vector<int>& feat_vec = feat_vec_match->second.first;
 				for(int i=0; i<feat_vec.size(); ++i) {
 				   //cerr << ngram << " :: Feat"<<n<<": " << i << "/" << feat_vec.size() << ": " << feat_vec.at(i) << endl;
-				   feats->set_value(feat_vec.at(i), 1);
+                                  const int feat = feat_vec.at(i);
+                                  const int bound_feat = feats_by_boundary_.at(words_since_phrase_boundary)[feat];
+				   feats->set_value(bound_feat, 1);
 				}
 #endif
 			} else {
@@ -444,13 +478,18 @@ public:
 #ifdef JLM_ONE_FEAT
 				const int backoff_feat = backoff_feat_vec_match->second.second;
 				if(backoff_feat != -1) {
-					feats->set_value(backoff_feat, 1);
+                                  const int bound_backoff_feat = feats_by_boundary_.at(words_since_phrase_boundary)[backoff_feat];
+					feats->set_value(bound_backoff_feat, 1);
+					//feats->set_value(backoff_feat, 1);
 				}
 #else
 					const vector<int>& backoff_feat_vec = backoff_feat_vec_match->second.second;
 					for(int i=0; i<backoff_feat_vec.size(); ++i) {
 					  //cerr << ngram << " :: Backoff Feat"<<n<<": " << i << "/" << backoff_feat_vec.size() << ": " << backoff_feat_vec.at(i) << endl;
-						feats->set_value(backoff_feat_vec.at(i), 1);
+                                          const int backoff_feat = backoff_feat_vec.at(i);
+                                          const int bound_backoff_feat = feats_by_boundary_.at(words_since_phrase_boundary)[backoff_feat];
+						feats->set_value(bound_backoff_feat, 1);
+						//feats->set_value(backoff_feat, 1);
 					}
 #endif
 				}
@@ -659,6 +698,7 @@ public:
 
 			char* feat = strtok(feats, " ");
 			feat_val.first = FD::Convert(string(feat)); // ugh, copy
+                        all_feats_.insert(feat_val.first);
 			if(strtok(NULL, " ") != NULL) {
 				cerr << "ERROR: JLM: Expeted only one feature" << endl;
 				abort();
@@ -667,6 +707,7 @@ public:
 			if(backoff_feats != NULL) {
 				feat = strtok(backoff_feats, " ");
 				feat_val.second = FD::Convert(string(feat)); // ugh, copy
+                                all_feats_.insert(feat_val.second);
 				if(strtok(NULL, " ") != NULL) {
 					cerr << "ERROR: JLM: Expeted only one feature" << endl;
 					abort();
@@ -682,6 +723,7 @@ public:
 				int fid = FD::Convert(string(feat)); // ugh, copy
 				//cerr << "Feat: " << feat << " -> " << fid << endl;
 				feat_vec.first.push_back(fid);
+                                all_feats_.insert(fid);
 				feat = strtok(NULL, " ");
 			}
 
@@ -691,6 +733,7 @@ public:
 					int fid = FD::Convert(string(feat)); // ugh, copy
 					//cerr << "Backoff Feat: " << feat << " -> " << fid << endl;
 					feats_vec.second.push_back(fid);
+                                        all_feats_.insert(fid);
 					feat = strtok(NULL, " ");
 				}
 			}
@@ -700,6 +743,21 @@ public:
  		}
 		int lm_feat_count = FD::NumFeats() - beforeFid;
 		cerr << "JLM: Loaded " << entries << " entries with " << lm_feat_count << " features; Max order is " << order_ << endl;
+
+                // TODO: Populate list of features conjoined with phrase boundaries
+                // using all_feats_
+                feats_by_boundary_.resize(order_+1);
+                for(set<int>::const_iterator it = all_feats_.begin(); it != all_feats_.end(); ++it) {
+                  int fid = *it;
+                  const string& feat_name = FD::Convert(fid);
+                  for(int i=0; i<=order_; ++i) {
+                    const string& with_bound = feat_name + "_Boundary" + boost::lexical_cast<std::string>(i);
+                    int with_bound_fid = FD::Convert(with_bound);
+                    feats_by_boundary_.at(i)[fid] = with_bound_fid;
+                  }
+                }
+		int boundary_feat_count = FD::NumFeats() - lm_feat_count;
+                cerr << "JLM: Added " << boundary_feat_count << " boundary features" << endl;
 	}
 
 	void LoadWordClasses(const string& file) {
@@ -776,6 +834,9 @@ private:
 	int conj_vec_size_;
 
 	FeatMap disc_feats_;
+  set<int> all_feats_;
+  // feats augmented by distance since phrase boundary markers
+  vector<map<int, int> > feats_by_boundary_;
 };
 
 JLanguageModel::JLanguageModel(const string& param) {
