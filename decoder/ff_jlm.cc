@@ -54,13 +54,16 @@ void load_file_into_vec(const string& filename,
 // -C conjoin_with_name : conjoined features must be *rule* features
 // -C@file : specify file with list of names to conjoin with
 // -d : Discriminative LM mode
+// -P : Use phrase boundary features
 bool ParseLMArgs(string const& in, string* filename, string* mapfile,
 		bool* explicit_markers, string* featname,
-		vector<int>* conjoin_with_fids, vector<int>* conjoined_fids) {
+                 vector<int>* conjoin_with_fids, vector<int>* conjoined_fids,
+                bool* use_phrase_bounds) {
 	vector<string> const& argv = SplitOnWhitespace(in);
 	*explicit_markers = false;
 	*featname = "JLanguageModel";
 	*mapfile = "";
+	*use_phrase_bounds = false;
 #define LMSPEC_NEXTARG if (i==argv.end()) {            \
     cerr << "Missing argument for "<<*last<<". "; goto usage; \
     } else { ++i; }
@@ -85,6 +88,9 @@ bool ParseLMArgs(string const& in, string* filename, string* mapfile,
 				LMSPEC_NEXTARG
 				;
 				*featname = *i;
+				break;
+			case 'P':
+				*use_phrase_bounds = true;
 				break;
 			case 'C':
 				LMSPEC_NEXTARG
@@ -460,15 +466,22 @@ public:
 				const int feat = feat_vec_match->second.first;
                                 // TODO: XXX: Phrase cound be longer than order of LM
                                 const int bound_feat = feats_by_boundary_.at(words_since_phrase_boundary)[feat];
-				feats->set_value(bound_feat, 1);
-				//feats->set_value(feat, 1);
+                                if(use_phrase_bounds_) {
+                                  feats->set_value(bound_feat, 1);
+                                } else {
+                                  feats->set_value(feat, 1);
+                                }
 #else
 				const vector<int>& feat_vec = feat_vec_match->second.first;
 				for(int i=0; i<feat_vec.size(); ++i) {
 				   //cerr << ngram << " :: Feat"<<n<<": " << i << "/" << feat_vec.size() << ": " << feat_vec.at(i) << endl;
                                   const int feat = feat_vec.at(i);
                                   const int bound_feat = feats_by_boundary_.at(words_since_phrase_boundary)[feat];
-				   feats->set_value(bound_feat, 1);
+                                  if(use_phrase_bounds_) {
+                                    feats->set_value(bound_feat, 1);
+                                  } else {
+                                    feats->set_value(feat, 1);
+                                  }
 				}
 #endif
 			} else {
@@ -479,8 +492,11 @@ public:
 				const int backoff_feat = backoff_feat_vec_match->second.second;
 				if(backoff_feat != -1) {
                                   const int bound_backoff_feat = feats_by_boundary_.at(words_since_phrase_boundary)[backoff_feat];
-					feats->set_value(bound_backoff_feat, 1);
-					//feats->set_value(backoff_feat, 1);
+                                  if(use_phrase_bounds_) {
+                                    feats->set_value(bound_backoff_feat, 1);
+                                  } else {
+                                    feats->set_value(backoff_feat, 1);
+                                  }
 				}
 #else
 					const vector<int>& backoff_feat_vec = backoff_feat_vec_match->second.second;
@@ -488,8 +504,11 @@ public:
 					  //cerr << ngram << " :: Backoff Feat"<<n<<": " << i << "/" << backoff_feat_vec.size() << ": " << backoff_feat_vec.at(i) << endl;
                                           const int backoff_feat = backoff_feat_vec.at(i);
                                           const int bound_backoff_feat = feats_by_boundary_.at(words_since_phrase_boundary)[backoff_feat];
-						feats->set_value(bound_backoff_feat, 1);
-						//feats->set_value(backoff_feat, 1);
+                                          if(use_phrase_bounds_) {
+                                            feats->set_value(bound_backoff_feat, 1);
+                                          } else {
+                                            feats->set_value(backoff_feat, 1);
+                                          }
 					}
 #endif
 				}
@@ -605,8 +624,13 @@ public:
 public:
 	JLanguageModelImpl(const string& filename, const string& mapfile,
 			bool explicit_markers, int fid, const string& featname,
-			const vector<int>& conjoin_with_fids, const vector<int>& conjoined_fids) :
-			jCDEC_UNK_(TD::Convert("<unk>")), add_sos_eos_(!explicit_markers), fid_(fid) {
+                           const vector<int>& conjoin_with_fids, const vector<int>& conjoined_fids,
+                           bool use_phrase_bounds) :
+			jCDEC_UNK_(TD::Convert("<unk>")),
+                        add_sos_eos_(!explicit_markers),
+                        fid_(fid),
+                        use_phrase_bounds_(use_phrase_bounds)
+  {
 
 		LoadDiscLM(filename);
 
@@ -641,7 +665,6 @@ public:
 		jSOS_ = TD::Convert("<s>");
 		assert(jSOS_ > 0);
 		jEOS_ = TD::Convert("</s>");
-		// KenLM invariant
 
 		// handle class-based LMs (unambiguous word->class mapping reqd.)
 		if (mapfile.size())
@@ -828,6 +851,7 @@ private:
 	vector<WordID> word2class_map_; // if this is a class-based LM, this is the word->class mapping
 	TRulePtr dummy_rule_;
 	int fid_;
+  bool use_phrase_bounds_;
 
 	vector<int> conjoin_with_fids_;
 	vector<int> conjoined_fids_;
@@ -844,8 +868,9 @@ JLanguageModel::JLanguageModel(const string& param) {
 	bool explicit_markers;
 	vector<int> conjoin_with_fids;
 	vector<int> conjoined_fids;
+        bool use_phrase_bounds;
 	if (!ParseLMArgs(param, &filename, &mapfile, &explicit_markers, &featname,
-			&conjoin_with_fids, &conjoined_fids)) {
+                         &conjoin_with_fids, &conjoined_fids, &use_phrase_bounds)) {
 		abort();
 	}
 
@@ -854,7 +879,7 @@ JLanguageModel::JLanguageModel(const string& param) {
 	// just throw any exceptions
 	pimpl_ = new JLanguageModelImpl(filename, mapfile,
 			explicit_markers, fid_, featname, conjoin_with_fids,
-			conjoined_fids);
+                                        conjoined_fids, use_phrase_bounds);
 
 	SetStateSize(pimpl_->ReserveStateSize());
 }
