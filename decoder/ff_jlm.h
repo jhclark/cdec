@@ -18,6 +18,7 @@ class JLanguageModel : public FeatureFunction {
   ~JLanguageModel();
   virtual void FinalTraversalFeatures(const void* context,
                                       SparseVector<double>* features) const;
+  virtual void PrepareForInput(const SentenceMetadata& smeta);
   static std::string usage(bool param,bool verbose);
   Features features() const;
 

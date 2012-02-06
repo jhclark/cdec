@@ -6,9 +6,14 @@
 #include <set>
 
 #include <boost/scoped_ptr.hpp>
+#include <boost/shared_ptr.hpp>
+#include <boost/tokenizer.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/unordered_set.hpp>
 #include <boost/unordered_map.hpp>
 
+#include "lattice.h"
+#include "sentence_metadata.h"
 #include "filelib.h"
 #include "stringlib.h"
 #include "hg.h"
@@ -36,7 +41,7 @@ typedef boost::unordered_map<uint64_t, pair<int,int> > FeatMap;
 typedef boost::unordered_map<uint64_t, pair<vector<int> , vector<int> > FeatMap;
 #endif
 
-static const conj_fid END_OF_CONJ_VEC = 0;
+typedef boost::unordered_map<pair<WordID,WordID>, pair<float,int> > LexProbMap;
 
 void load_file_into_vec(const string& filename,
 		vector<string>* conjoin_with_feats) {
@@ -49,21 +54,292 @@ void load_file_into_vec(const string& filename,
 	}
 }
 
+// takes some set of features and maps it onto
+// a finer/more complex/more conjoined set of features
+// for now, we assume that we will do this individually (rather than in series)
+// so that we end up with less model sparsity
+class FeatureMapper {
+public:
+  virtual ~FeatureMapper() {}
+  virtual void SetSrc(const vector<WordID>& src) = 0;
+  virtual void InitFeats(const set<int>& all_feats, int order) = 0;
+  virtual int MapFeat(const int coarse_feat,
+		      const vector<WordID>& ngram,
+		      const int words_since_phrase_boundary) = 0;
+};
+
+class PhraseBoundaryFeatureMapper : public FeatureMapper {
+
+  virtual void SetSrc(const vector<WordID>& src) {}
+
+  virtual void InitFeats(const set<int>& all_feats, int order) {
+    int prev_feat_count = FD::NumFeats();
+    feats_by_boundary_.resize(order+1);
+    for(set<int>::const_iterator it = all_feats.begin(); it != all_feats.end(); ++it) {
+      int fid = *it;
+      const string& feat_name = FD::Convert(fid);
+      for(int i=0; i<=order; ++i) {
+	const string& with_bound = feat_name + "_Boundary" + boost::lexical_cast<std::string>(i);
+	int with_bound_fid = FD::Convert(with_bound);
+	feats_by_boundary_.at(i)[fid] = with_bound_fid;
+      }
+    }
+    int boundary_feat_count = FD::NumFeats() - prev_feat_count;
+    cerr << "JLM: Added " << boundary_feat_count << " boundary features" << endl;
+  }
+
+  virtual int MapFeat(const int coarse_feat,
+		      const vector<WordID>& ngram /*unused*/,
+		      const int words_since_phrase_boundary) {
+    // NOTE: Phrase cound be longer than order of LM
+    // but this might provide some interesting information
+    return feats_by_boundary_.at(words_since_phrase_boundary)[coarse_feat];
+  }
+
+private:
+  // feats augmented by distance since phrase boundary markers
+  vector<map<int, int> > feats_by_boundary_;
+};
+
+class AnchorFeatureMapper : public FeatureMapper {
+public:
+	AnchorFeatureMapper(const string& f2eLexFile, const string& stopwordsFile,
+			    float min_prob, int min_link_count)
+	  : min_prob_(min_prob),
+	    min_link_count_(min_link_count) {
+		load_lex_probs(f2eLexFile);
+		load_stopwords(stopwordsFile);
+	}
+
+private:
+	void load_lex_probs(const string& f2eLexFile) {
+		ReadFile in_read(f2eLexFile);
+		istream & in = *in_read.stream();
+		boost::char_separator<char> sep(" ");
+		string line;
+		while (getline(in, line)) {
+			if (!line.empty()) {
+				// note to eclipse CDT users: there is a direct correlation between
+				// using boost and the number of false positives on errors in CDT
+				boost::tokenizer<boost::char_separator<char> > tok(line, sep);
+				boost::tokenizer<boost::char_separator<char> >::iterator it = tok.begin();
+				WordID e = TD::Convert(*it);
+				++it;
+				WordID f = TD::Convert(*it);
+				++it;
+				// P(e|f)
+				float pegf = boost::lexical_cast<float>(*it);
+				++it;
+				// C(f,e)
+				int countFE = boost::lexical_cast<int>(*it);
+
+//				cerr << "Got lex line: " << line << " :: " << e << " " << f << " " << pegf << " " << countFE << endl;
+
+				lex_probs_[pair<WordID,WordID>(e,f)] = pair<float,int>(pegf, countFE);
+			}
+		}
+	}
+
+	void load_stopwords(const string& stopwordsFile) {
+		ReadFile in_read(stopwordsFile);
+		istream & in = *in_read.stream();
+		string line;
+		while (getline(in, line)) {
+			if (!line.empty()) {
+				stopwords_.insert(TD::Convert(line));
+			}
+		}
+	}
+
+	void LexProb(const WordID tgt_word, const vector<WordID>& src, float* prob, int* link_count) const {
+		*prob = 0.0;
+		*link_count = 0;
+		for(int i=0; i<src.size(); ++i) {
+			LexProbMap::const_iterator match = lex_probs_.find(pair<WordID,WordID>(tgt_word, src.at(i)));
+			if(match != lex_probs_.end()) {
+				const pair<float, int>& value = match->second;
+				*prob += value.first;
+				*link_count += value.second;
+//				cerr << "LexProb: Match" << endl;
+			} else {
+//				cerr << "LexProb: No match" << endl;
+			}
+		}
+//		cerr << "LexProb: " << TD::Convert(tgt_word) << " " << *prob << " links=" << *link_count << endl;
+	}
+
+	bool IsAnchor(WordID tgt_word, const vector<WordID>& src) const {
+		bool result = false;
+		// 1) Exclude stopwords
+		if(stopwords_.find(tgt_word) == stopwords_.end()) {
+			// 2) Calculate lexical probability for this sentence
+			float prob;
+			int link_count;
+			LexProb(tgt_word, src, &prob, &link_count);
+
+			// 3) Threshold based on prob and count
+			if(prob >= min_prob_ && link_count >= min_link_count_) {
+				result = true;
+			}
+		}
+
+		return result;
+	}
+
+	// must call SetSrc first!
+	bool IsAnchor(WordID tgt) {
+		if(tgt > TD::NumWords()) {
+			cerr << "ERROR: tgt > TD::NumWords() :: " << tgt << " > " << TD::NumWords() << endl;
+			abort();
+		}
+		if(cached_.size() <= TD::NumWords()) {
+//			cerr << "Increased cache size to " << TD::NumWords() << endl;
+			cached_.resize(TD::NumWords()+1, false);
+			cached_anchors_.resize(TD::NumWords()+1, false);
+		}
+		if(!cached_.at(tgt)) {
+		  cached_anchors_[tgt] = IsAnchor(tgt, src_);
+//		  cerr << "Caching new word " << TD::Convert(tgt) << " wid=" << tgt << " confident? " << cached_anchors_[tgt] << endl;
+		  cached_[tgt] = true;
+		}
+		return cached_anchors_.at(tgt);
+	}
+
+  void BuildFeats(const string& prev_feat_name, const int prev_fid, const int iOrder) {
+	  // TODO: Recurse less times for features of lower orders...
+	  // Right now, we cache too many features, even though they'll never get used at runtime
+    if(iOrder >= 0) {
+	const string& with_anchor = prev_feat_name + "_Anchor" + boost::lexical_cast<std::string>(iOrder);
+	const string& with_confusion = prev_feat_name + "_Guess" + boost::lexical_cast<std::string>(iOrder);
+	int with_anchor_fid = FD::Convert(with_anchor);
+	int with_confusion_fid = FD::Convert(with_confusion);
+	cerr << "Add feature " << with_anchor << " " << with_anchor_fid << " from " << prev_fid << endl;
+	cerr << "Add feature " << with_confusion << " " << with_confusion_fid << " from " << prev_fid << endl;
+	feat_map_[pair<int,bool>(prev_fid, true)] = with_anchor_fid;
+	feat_map_[pair<int,bool>(prev_fid, false)] = with_confusion_fid;
+	// recursively add...
+	BuildFeats(with_anchor, with_anchor_fid, iOrder-1);
+	BuildFeats(with_confusion, with_confusion_fid, iOrder-1);
+    }
+  }
+
+  // very inefficiently gets the length of an ngram feature
+  // to make this more efficient, we would need to use more memory
+  // in the form of separate hash maps or encoding order info into each feat
+  int GetLength(const string& feat_name) {
+
+	  if(feat_name == "LM_UNK") {
+		  return 0;
+	  }
+
+	  size_t where = feat_name.find("_Len");
+	  if(where == string::npos) {
+		  cerr << "ERROR: Expected to find Len in LM feature name: " << feat_name << endl;
+		  abort();
+	  }
+	  // Assume order is <= 0 (i.e. is one digit)
+	  const string& str_len = feat_name.substr(where+4, 1);
+	  const int len = boost::lexical_cast<int>(str_len);
+	  return len;
+  }
+
+public:
+  virtual void SetSrc(const vector<WordID>& src) {
+    src_ = src;
+    cached_.clear();
+    cached_.assign(TD::NumWords(), false);
+    cached_anchors_.clear();
+    cached_anchors_.assign(TD::NumWords(), false);
+  }
+
+  virtual void InitFeats(const set<int>& all_feats, int order) {
+    int prev_feat_count = FD::NumFeats();
+    for(set<int>::const_iterator it = all_feats.begin(); it != all_feats.end(); ++it) {
+      int fid = *it;
+      const string& feat_name = FD::Convert(fid);
+      // recursively build features for all orders
+      const int ngram_len = GetLength(feat_name);
+      BuildFeats(feat_name, fid, ngram_len-1);
+    }
+    int new_feat_count = FD::NumFeats() - prev_feat_count;
+    cerr << "JLM: Added " << new_feat_count << " anchor features" << endl;
+  }
+
+  virtual int MapFeat(const int coarse_feat,
+		      const vector<WordID>& ngram,
+		      const int words_since_phrase_boundary /*unused*/) {
+
+    // Score each word in n-gram with confidence metric
+    // (could memoize this, but oh well)
+    // start with right-most word so that _Anchor0 indicates
+    // that we are confident of the word being predicted
+    // and _Anchor4 indicates that we are not confident
+    // of the oldest word in the history
+    int fid = coarse_feat;
+    for(int i=0; i<ngram.size(); ++i) {
+      bool is_confident = IsAnchor(ngram.at(i));
+      map<pair<int, bool>, int>::const_iterator it = feat_map_.find(pair<int, bool>(fid, is_confident));
+//      cerr << "Query feature anchor=" << is_confident << " from " << fid;
+      if(it == feat_map_.end()) {
+		cerr << "ERROR: For ngram "<<ngram<<" -- Could not map anchor feature " << FD::Convert(fid) << "; (fid=" << fid << ") for confidence=" << is_confident << "(wid=" << ngram.at(i) << "@"<<i<<") (pre-cached features are invalid)" << endl;
+		cerr << "WARNING: Assuming this is an (INFREQUENT!) hash collision and moving on";
+		break;
+//		abort();
+      }
+      fid = it->second;
+    }
+    return fid;
+  }
+
+private:
+	boost::unordered_set<int> stopwords_; // wids
+
+	// (e_wid, f_wid) => (lexProb, linkCount)
+	LexProbMap lex_probs_;
+
+	const float min_prob_;
+	const int min_link_count_;
+
+	vector<WordID> src_;
+	vector<bool> cached_;
+	vector<bool> cached_anchors_;
+  
+  // conjoined feature IDs
+  // to get the feature of a trigram, use (roughly):
+  //   int f1 = feat_map_.get( (lm_fid, right_is_anchor) )
+  //   int f2 = feat_map_.get( (f1, middle_is_anchor) )
+  //   int mapped_fid = feat_map_.get( (f2, left_is_anchor) )
+  map<pair<int, bool>, int> feat_map_;
+};
+
+static const conj_fid END_OF_CONJ_VEC = 0;
+
 // -x : rules include <s> and </s>
 // -n NAME : feature id is NAME
 // -C conjoin_with_name : conjoined features must be *rule* features
 // -C@file : specify file with list of names to conjoin with
-// -d : Discriminative LM mode
 // -P : Use phrase boundary features
+// -c stopwords_file lex_f2e_file min_prob min_link_count: Use confidence features
+// NOTE: stopwords_file: stopword file for lexical confidence features
+// NOTE: lexicon_f2e_file: Custom formatted lexicon file with space-separated lines like:
+//         e f P(e|f) countFE countF
 bool ParseLMArgs(string const& in, string* filename, string* mapfile,
 		bool* explicit_markers, string* featname,
                  vector<int>* conjoin_with_fids, vector<int>* conjoined_fids,
-                bool* use_phrase_bounds) {
+		 bool* use_phrase_bounds, bool* use_confidence,
+		 string* lex_f2e_file, string* stopwords_file,
+		 float* min_prob, int* min_link_count) {
+
 	vector<string> const& argv = SplitOnWhitespace(in);
 	*explicit_markers = false;
 	*featname = "JLanguageModel";
 	*mapfile = "";
 	*use_phrase_bounds = false;
+	*use_confidence = false;
+	*lex_f2e_file = "";
+	*stopwords_file = "";
+	*min_prob = 0.0;
+	*min_link_count = 0;
 #define LMSPEC_NEXTARG if (i==argv.end()) {            \
     cerr << "Missing argument for "<<*last<<". "; goto usage; \
     } else { ++i; }
@@ -101,6 +377,21 @@ bool ParseLMArgs(string const& in, string* filename, string* mapfile,
 				} else {
 					conjoin_with_feats.push_back(*i);
 				}
+				break;
+			case 'c':
+			  *use_confidence = true;
+				LMSPEC_NEXTARG
+				;
+				*stopwords_file = *i;
+				LMSPEC_NEXTARG
+				;
+				*lex_f2e_file = *i;
+				LMSPEC_NEXTARG
+				;
+				*min_prob = boost::lexical_cast<float>(*i);
+				LMSPEC_NEXTARG
+				;
+				*min_link_count = boost::lexical_cast<int>(*i);
 				break;
 #undef LMSPEC_NEXTARG
 			default:
@@ -147,22 +438,38 @@ string JLanguageModel::usage(bool /*param*/, bool /*verbose*/) {
 	return "JLanguageModel";
 }
 
-struct VMapper: public lm::EnumerateVocab {
-	VMapper(vector<lm::WordIndex>* out) :
-			out_(out), kLM_UNKNOWN_TOKEN(0) {
-		out_->clear();
-	}
-	void Add(lm::WordIndex index, const StringPiece &str) {
-		const WordID cdec_id = TD::Convert(str.as_string());
-		if (cdec_id >= out_->size())
-			out_->resize(cdec_id + 1, kLM_UNKNOWN_TOKEN);
-		(*out_)[cdec_id] = index;
-	}
-	vector<lm::WordIndex>* out_;
-	const lm::WordIndex kLM_UNKNOWN_TOKEN;
-};
+//struct VMapper: public lm::EnumerateVocab {
+//	VMapper(vector<lm::WordIndex>* out) :
+//			out_(out), kLM_UNKNOWN_TOKEN(0) {
+//		out_->clear();
+//	}
+//	void Add(lm::WordIndex index, const StringPiece &str) {
+//		const WordID cdec_id = TD::Convert(str.as_string());
+//		if (cdec_id >= out_->size())
+//			out_->resize(cdec_id + 1, kLM_UNKNOWN_TOKEN);
+//		(*out_)[cdec_id] = index;
+//	}
+//	vector<lm::WordIndex>* out_;
+//	const lm::WordIndex kLM_UNKNOWN_TOKEN;
+//};
 
 class JLanguageModelImpl {
+public:
+	void PrepareForInput(const SentenceMetadata& smeta) {
+		vector<WordID> src;
+		for(std::vector<std::vector<LatticeArc> >::const_iterator it1 = smeta.src_lattice_.begin();
+		  it1 != smeta.src_lattice_.end();
+		  ++it1)
+		{
+		  for(std::vector<LatticeArc>::const_iterator it2 = it1->begin(); it2 != it1->end(); ++it2) {
+			src.push_back(it2->label);
+		  }
+		}
+		for(int j=0; j<feat_mappers_.size(); ++j) {
+		  feat_mappers_.at(j)->SetSrc(src);
+		}
+	}
+private:
 
 	// returns the number of unscored words at the left edge of a span
 	inline int UnscoredSize(const void* state) const {
@@ -455,67 +762,89 @@ public:
     const int words_since_phrase_boundary = min(words_since_phrase_boundary1, order_);
 
 	  //cerr << "Scoring ngram: " << ngram << endl;
+	  // TODO: We *really* need a test harness for this...
+
 		assert(ngram.size() <= order_);
 		bool found_match = false;
-		for(int n=ngram.size(); n>0; --n) {
-			uint64_t hash = Hash(ngram);
+		  // for storing the n-gram being looked up:
+		  // XXX: this is less efficient than storing offsets, but is less error-prone
+		  // TODO: We could also store the n-grams in reverse order to make dropping more efficient
+		vector<WordID> ngram_buf;
+		ngram_buf.reserve(ngram.size());
+		ngram_buf = ngram;
+		vector<WordID> ngram_context_buf;
+		ngram_context_buf.reserve(ngram.size());
+		ngram_context_buf = ngram;
+		// drop right-most word (word being predicted)
+		ngram_context_buf.erase(ngram_context_buf.end()-1);
+
+		for(int n=ngram.size()-1; n>=0; --n) {
+		  
+		  uint64_t hash = Hash(ngram_buf);
 			FeatMap::const_iterator feat_vec_match = disc_feats_.find(hash);
 			if(feat_vec_match != disc_feats_.end()) {
 				found_match = true;
 #ifdef JLM_ONE_FEAT
 				const int feat = feat_vec_match->second.first;
-                                // TODO: XXX: Phrase cound be longer than order of LM
-                                const int bound_feat = feats_by_boundary_.at(words_since_phrase_boundary)[feat];
-                                if(use_phrase_bounds_) {
-                                  feats->set_value(bound_feat, 1);
-                                } else {
-                                  feats->set_value(feat, 1);
-                                }
+//				cerr << "Firing feat " << FD::Convert(feat) << " for ngram " << ngram_buf << endl;
+
+				// TODO: Disabling firing original feat?
+				feats->set_value(feat, 1);
+				for(int j=0; j<feat_mappers_.size(); ++j) {
+				  const int fine_feat = feat_mappers_.at(j)->MapFeat(feat, ngram_buf, words_since_phrase_boundary);
+				  feats->set_value(fine_feat, 1);
+				}
 #else
 				const vector<int>& feat_vec = feat_vec_match->second.first;
 				for(int i=0; i<feat_vec.size(); ++i) {
 				   //cerr << ngram << " :: Feat"<<n<<": " << i << "/" << feat_vec.size() << ": " << feat_vec.at(i) << endl;
                                   const int feat = feat_vec.at(i);
-                                  const int bound_feat = feats_by_boundary_.at(words_since_phrase_boundary)[feat];
-                                  if(use_phrase_bounds_) {
-                                    feats->set_value(bound_feat, 1);
-                                  } else {
-                                    feats->set_value(feat, 1);
-                                  }
+				  // TODO: Disabling firing original feat?
+				  feats->set_value(feat, 1);
+				  for(int j=0; j<feat_mappers_.size(); ++j) {
+				    const int fine_feat = feat_mappers_.at(j)->MapFeat(feat, ngram_buf, words_since_phrase_boundary);
+				    feats->set_value(fine_feat, 1);
+				  }
 				}
 #endif
-			} else {
-				uint64_t backoff_hash = Hash(ngram, ngram.size()-n, ngram.size());
+			} else if(!ngram_context_buf.empty()) {
+			  // we can't backoff farther than a unigram
+				uint64_t backoff_hash = Hash(ngram_context_buf);
 				FeatMap::const_iterator backoff_feat_vec_match = disc_feats_.find(backoff_hash);
 				if(backoff_feat_vec_match != disc_feats_.end()) {
 #ifdef JLM_ONE_FEAT
 				const int backoff_feat = backoff_feat_vec_match->second.second;
 				if(backoff_feat != -1) {
-                                  const int bound_backoff_feat = feats_by_boundary_.at(words_since_phrase_boundary)[backoff_feat];
-                                  if(use_phrase_bounds_) {
-                                    feats->set_value(bound_backoff_feat, 1);
-                                  } else {
-                                    feats->set_value(backoff_feat, 1);
-                                  }
+				  feats->set_value(backoff_feat, 1);
+				  for(int j=0; j<feat_mappers_.size(); ++j) {
+				    const int fine_backoff_feat = feat_mappers_.at(j)->MapFeat(backoff_feat, ngram_context_buf, words_since_phrase_boundary);
+				    feats->set_value(fine_backoff_feat, 1);
+				  }
 				}
 #else
 					const vector<int>& backoff_feat_vec = backoff_feat_vec_match->second.second;
 					for(int i=0; i<backoff_feat_vec.size(); ++i) {
 					  //cerr << ngram << " :: Backoff Feat"<<n<<": " << i << "/" << backoff_feat_vec.size() << ": " << backoff_feat_vec.at(i) << endl;
                                           const int backoff_feat = backoff_feat_vec.at(i);
-                                          const int bound_backoff_feat = feats_by_boundary_.at(words_since_phrase_boundary)[backoff_feat];
-                                          if(use_phrase_bounds_) {
-                                            feats->set_value(bound_backoff_feat, 1);
-                                          } else {
-                                            feats->set_value(backoff_feat, 1);
-                                          }
+					  feats->set_value(backoff_feat, 1);
+					  for(int j=0; j<feat_mappers_.size(); ++j) {
+					    const int fine_backoff_feat = feat_mappers_.at(j)->MapFeat(backoff_feat, ngram_context_buf, words_since_phrase_boundary);
+					    feats->set_value(fine_backoff_feat, 1);
+					  }
 					}
 #endif
 				}
 			}
-		}
+			// remove the first word from the left of each n-gram buffer
+			if(!ngram_buf.empty()) {
+			  ngram_buf.erase(ngram_buf.begin());
+			}
+			if(!ngram_context_buf.empty()) {
+			  ngram_context_buf.erase(ngram_context_buf.begin());
+			}
+		} // for each n in order
 		if(!found_match) {
-			// TODO: Precache this
+			// TODO: Precache this?
 			vector<WordID> unk_ngram;
 			unk_ngram.push_back(jCDEC_UNK_);
 			uint64_t hash = Hash(unk_ngram);
@@ -622,16 +951,19 @@ public:
 	}
 
 public:
-	JLanguageModelImpl(const string& filename, const string& mapfile,
-			bool explicit_markers, int fid, const string& featname,
-                           const vector<int>& conjoin_with_fids, const vector<int>& conjoined_fids,
-                           bool use_phrase_bounds) :
+	JLanguageModelImpl(const string& filename, 
+			   const string& mapfile,
+			   bool explicit_markers,
+			   int fid,
+			   const string& featname,
+                           const vector<int>& conjoin_with_fids,
+			   const vector<int>& conjoined_fids,
+			   const vector<boost::shared_ptr<FeatureMapper> >& feat_mappers) :
 			jCDEC_UNK_(TD::Convert("<unk>")),
                         add_sos_eos_(!explicit_markers),
                         fid_(fid),
-                        use_phrase_bounds_(use_phrase_bounds)
+			feat_mappers_(feat_mappers)
   {
-
 		LoadDiscLM(filename);
 
 		// TODO: Replace with a vector<bool>, dynamic_bitset<bool>, or use on-the-fly shifts
@@ -767,20 +1099,9 @@ public:
 		int lm_feat_count = FD::NumFeats() - beforeFid;
 		cerr << "JLM: Loaded " << entries << " entries with " << lm_feat_count << " features; Max order is " << order_ << endl;
 
-                // TODO: Populate list of features conjoined with phrase boundaries
-                // using all_feats_
-                feats_by_boundary_.resize(order_+1);
-                for(set<int>::const_iterator it = all_feats_.begin(); it != all_feats_.end(); ++it) {
-                  int fid = *it;
-                  const string& feat_name = FD::Convert(fid);
-                  for(int i=0; i<=order_; ++i) {
-                    const string& with_bound = feat_name + "_Boundary" + boost::lexical_cast<std::string>(i);
-                    int with_bound_fid = FD::Convert(with_bound);
-                    feats_by_boundary_.at(i)[fid] = with_bound_fid;
-                  }
-                }
-		int boundary_feat_count = FD::NumFeats() - lm_feat_count;
-                cerr << "JLM: Added " << boundary_feat_count << " boundary features" << endl;
+		for(int i=0; i<feat_mappers_.size(); ++i) {
+		  feat_mappers_.at(i)->InitFeats(all_feats_, order_);
+		}
 	}
 
 	void LoadWordClasses(const string& file) {
@@ -851,16 +1172,25 @@ private:
 	vector<WordID> word2class_map_; // if this is a class-based LM, this is the word->class mapping
 	TRulePtr dummy_rule_;
 	int fid_;
-  bool use_phrase_bounds_;
 
 	vector<int> conjoin_with_fids_;
 	vector<int> conjoined_fids_;
 	int conj_vec_size_;
 
 	FeatMap disc_feats_;
+
   set<int> all_feats_;
-  // feats augmented by distance since phrase boundary markers
-  vector<map<int, int> > feats_by_boundary_;
+
+  vector<boost::shared_ptr<FeatureMapper> > feat_mappers_;
+
+  /*
+	// features that can be annotated on individual target words
+	// vector is indexed by word's position in the target side of the rule/phrase (including non-terms)
+	// map key is original feature id annotated on the rule/phrase
+	// map value is the feature to be fired and/or conjoined at the specified target word index
+	vector<boost::unordered_map<int, int> > word_index_feats_;
+  */
+	// for getting word-level confidences based on the translation model
 };
 
 JLanguageModel::JLanguageModel(const string& param) {
@@ -869,17 +1199,36 @@ JLanguageModel::JLanguageModel(const string& param) {
 	vector<int> conjoin_with_fids;
 	vector<int> conjoined_fids;
         bool use_phrase_bounds;
+	// confidence feature mapper config:
+        bool use_confidence;
+	string f2e_lex_file;
+	string stopwords_file;
+	float min_prob;
+	int min_link_count;
 	if (!ParseLMArgs(param, &filename, &mapfile, &explicit_markers, &featname,
-                         &conjoin_with_fids, &conjoined_fids, &use_phrase_bounds)) {
+                         &conjoin_with_fids, &conjoined_fids, &use_phrase_bounds, &use_confidence,
+			 &f2e_lex_file, &stopwords_file, &min_prob, &min_link_count)) {
 		abort();
 	}
 
 	fid_ = FD::Convert(featname);
 
+	// TODO: Create feat_mappers based on use_phrase_bounds and use of lex confidence
+	vector<boost::shared_ptr<FeatureMapper> > feat_mappers;
+	if(use_phrase_bounds) {
+	  feat_mappers.push_back(boost::shared_ptr<FeatureMapper>(new PhraseBoundaryFeatureMapper));
+	}
+	if(use_confidence) {
+	  assert(f2e_lex_file != "");
+	  assert(stopwords_file != "");
+	  feat_mappers.push_back(boost::shared_ptr<FeatureMapper>(
+            new AnchorFeatureMapper(f2e_lex_file, stopwords_file, min_prob, min_link_count)));
+	}
+
 	// just throw any exceptions
 	pimpl_ = new JLanguageModelImpl(filename, mapfile,
 			explicit_markers, fid_, featname, conjoin_with_fids,
-                                        conjoined_fids, use_phrase_bounds);
+                                        conjoined_fids, feat_mappers);
 
 	SetStateSize(pimpl_->ReserveStateSize());
 }
@@ -923,4 +1272,8 @@ boost::shared_ptr<FeatureFunction> JLanguageModelFactory::Create(std::string par
 
 std::string JLanguageModelFactory::usage(bool params, bool verbose) const {
 	return JLanguageModel::usage(params, verbose);
+}
+
+void JLanguageModel::PrepareForInput(const SentenceMetadata& smeta) {
+	pimpl_->PrepareForInput(smeta);
 }

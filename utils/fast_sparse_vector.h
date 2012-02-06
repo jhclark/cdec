@@ -17,6 +17,9 @@
 #include <vector>
 
 #include <boost/static_assert.hpp>
+#include <tr1/unordered_map> // use tr1 instead of boost since dwarf.h already uses tr1
+
+using namespace std::tr1;
 
 #if HAVE_BOOST_ARCHIVE_TEXT_OARCHIVE_HPP
 #include <boost/serialization/map.hpp>
@@ -28,6 +31,10 @@
 // detected in some way but it's probably easiest (for me)
 // to just set it
 #define L2_CACHE_LINE 128
+
+// if always working with very huge feature vectors, might be worth setting to False
+// otherwise, you should use True
+#define REMOTE_BY_DEFAULT false
 
 // this should just be a typedef to pair<int,T> on the new c++
 // I have to avoid this since I want to use unions and c++-98
@@ -65,6 +72,9 @@ BOOST_STATIC_ASSERT(sizeof(PairIntT<float>) == sizeof(std::pair<int,float>));
 template <typename T, int LOCAL_MAX = (sizeof(T) == sizeof(float) ? 15 : 7)>
 class FastSparseVector {
  public:
+  typedef unordered_map<int, T> FastMapType;
+  //typedef std::map<int, T> FastMapType;
+
   struct const_iterator {
     const_iterator(const FastSparseVector<T>& v, const bool is_end) : local_(!v.is_remote_) {
       if (local_) {
@@ -78,7 +88,7 @@ class FastSparseVector {
     }
     const bool local_;
     const PairIntT<T>* local_it_;
-    typename std::map<int, T>::const_iterator remote_it_;
+    typename FastMapType::const_iterator remote_it_;
     const std::pair<const int, T>& operator*() const {
       if (local_)
         return *reinterpret_cast<const std::pair<const int, float>*>(local_it_);
@@ -111,13 +121,13 @@ class FastSparseVector {
     }
   };
  public:
-  FastSparseVector() : local_size_(0), is_remote_(false) { std::memset(&data_, 0, sizeof(data_)); }
+  FastSparseVector() : local_size_(0), is_remote_(REMOTE_BY_DEFAULT) { std::memset(&data_, 0, sizeof(data_)); }
   ~FastSparseVector() {
     clear();
   }
   FastSparseVector(const FastSparseVector& other) {
     std::memcpy(this, &other, sizeof(FastSparseVector));
-    if (is_remote_) data_.rbmap = new std::map<int, T>(*data_.rbmap);
+    if (is_remote_) data_.rbmap = new FastMapType(*data_.rbmap);
   }
   void erase(int k) {
     if (is_remote_) {
@@ -139,7 +149,7 @@ class FastSparseVector {
     clear();
     std::memcpy(this, &other, sizeof(FastSparseVector));
     if (is_remote_)
-      data_.rbmap = new std::map<int, T>(*data_.rbmap);
+      data_.rbmap = new FastMapType(*data_.rbmap);
     return *this;
   }
   T const& get_singleton() const {
@@ -160,7 +170,7 @@ class FastSparseVector {
   }
   inline T value(int k) const {
     if (is_remote_) {
-      typename std::map<int, T>::const_iterator it = data_.rbmap->find(k);
+      typename FastMapType::const_iterator it = data_.rbmap->find(k);
       if (it != data_.rbmap->end()) return it->second;
     } else {
       for (int i = 0; i < local_size_; ++i) {
@@ -193,7 +203,7 @@ class FastSparseVector {
   }
   inline void clear() {
     if (is_remote_) delete data_.rbmap;
-    is_remote_ = false;
+    is_remote_ = REMOTE_BY_DEFAULT;
     local_size_ = 0;
   }
   inline bool empty() const {
@@ -224,8 +234,8 @@ class FastSparseVector {
   }
   inline FastSparseVector& operator*=(const T& scalar) {
     if (is_remote_) {
-      const typename std::map<int, T>::iterator end = data_.rbmap->end();
-      for (typename std::map<int, T>::iterator it = data_.rbmap->begin(); it != end; ++it)
+      const typename FastMapType::iterator end = data_.rbmap->end();
+      for (typename FastMapType::iterator it = data_.rbmap->begin(); it != end; ++it)
         it->second *= scalar;
     } else {
       for (int i = 0; i < local_size_; ++i)
@@ -235,8 +245,8 @@ class FastSparseVector {
   }
   inline FastSparseVector& operator/=(const T& scalar) {
     if (is_remote_) {
-      const typename std::map<int, T>::iterator end = data_.rbmap->end();
-      for (typename std::map<int, T>::iterator it = data_.rbmap->begin(); it != end; ++it)
+      const typename FastMapType::iterator end = data_.rbmap->end();
+      for (typename FastMapType::iterator it = data_.rbmap->begin(); it != end; ++it)
         it->second /= scalar;
     } else {
       for (int i = 0; i < local_size_; ++i)
@@ -321,17 +331,17 @@ class FastSparseVector {
   void swap_local_rbmap() {
     if (is_remote_) { // data is in rbmap, move to local
       assert(data_.rbmap->size() < LOCAL_MAX);
-      const std::map<int, T>* m = data_.rbmap;
+      const FastMapType* m = data_.rbmap;
       local_size_ = m->size();
       int i = 0;
-      for (typename std::map<int, T>::const_iterator it = m->begin();
+      for (typename FastMapType::const_iterator it = m->begin();
            it != m->end(); ++it) {
         data_.local[i] = *it;
         ++i;
       }
       is_remote_ = false;
     } else { // data is local, move to rbmap
-      std::map<int, T>* m = new std::map<int, T>(&data_.local[0], &data_.local[local_size_]);
+      FastMapType* m = new FastMapType(&data_.local[0], &data_.local[local_size_]);
       data_.rbmap = m;
       is_remote_ = true;
     }
@@ -339,7 +349,7 @@ class FastSparseVector {
 
   union {
     PairIntT<T> local[LOCAL_MAX];
-    std::map<int, T>* rbmap;
+    FastMapType* rbmap;
   } data_;
   unsigned char local_size_;
   bool is_remote_;
