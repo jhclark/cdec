@@ -21,11 +21,12 @@ sys.stderr = codecs.getwriter('utf-8')(sys.stderr)
 
 MAX_CONJS = 4
 
-srcHfws = set([line.strip() for line in open(srcHfwsFile)])
-tgtHfws = set([line.strip() for line in open(tgtHfwsFile)])
+srcHfws = set([line.strip() for line in codecs.open(srcHfwsFile, 'r', 'utf-8')])
+tgtHfws = set([line.strip() for line in codecs.open(tgtHfwsFile, 'r', 'utf-8')])
 
 def isPunct(tok): return all([ unicodedata.category(c) == 'P' for c in tok])
 def isNonterm(tok): return len(tok) >= 3 and tok[0] == '[' and tok[-1] == ']'
+def escapeFeat(name): return name.replace(';','SEMI')
 
 for line in sys.stdin:
     (lhs, src, tgt, feats, align) = line.strip().split(' ||| ')
@@ -84,6 +85,7 @@ for line in sys.stdin:
                 lexFeats.append("%s_%s"%(srcFeat,tgtFeat))
                 
     feats += ' ' + ' '.join([name+"=1" for name in newFeatList+lexFeats])
+    feats = escapeFeat(feats)
     print ' ||| '.join([lhs, src, tgt, feats, align])
     
 
