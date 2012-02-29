@@ -3,6 +3,7 @@ import sys
 import unicodedata
 import codecs
 import itertools
+import argparse
 
 # Adds extra features:
 # Nonterminal count
@@ -12,17 +13,40 @@ import itertools
 # Whether the source is identical to the target
 # Optionally, some conjunctions thereof
 
-(srcHfwsFile, tgtHfwsFile, useConjs) = sys.argv[1:]
-useConjs = useConjs[0].lower() == 't'
+# NOTE: Conjunctions can have incomplete information if the initial feature set has N degrees of freedom,
+#       then the original feature set only needed N-1 features to represent it (i.e. zero features could
+#       be dropped).
+
+parser = argparse.ArgumentParser(description='Add extra features such as High Frequency Word Counts')
+#parser.add_argument('srcHfwFile', metavar='N', type=int, nargs='+', help='Source high frequency words file')
+parser.add_argument('--lenFeats', help='Use length features', action='store_true')
+parser.add_argument('--nontermFeats', help='Use non-terminal features', action='store_true')
+parser.add_argument('--srcHfwFile', help='Source high frequency words file')
+parser.add_argument('--tgtHfwFile', help='Target high frequency words file')
+parser.add_argument('--srcHfwCounts', help='Use source high frequency word count features using all words in the HFW words file (requires filename)', action='store_true')
+parser.add_argument('--tgtHfwCounts', help='Use target high frequency word count features using all words in the HFW words file (requires filename)', action='store_true')
+parser.add_argument('--srcHfwLex', type=int, help='Use source high frequency word lexical features, using the top N words (requires filename)')
+parser.add_argument('--tgtHfwLex', type=int, help='Use target high frequency word lexical features, using the top N words (requires filename)')
+parser.add_argument('--conjoin', type=int, help='Use conjunctions of length N (recommended: 4)', default=0)
+
+args = parser.parse_args()
+
 
 sys.stdin = codecs.getreader('utf-8')(sys.stdin)
 sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 sys.stderr = codecs.getwriter('utf-8')(sys.stderr)
 
-MAX_CONJS = 4
+print args.srcHfwFile
 
-srcHfws = set([line.strip() for line in codecs.open(srcHfwsFile, 'r', 'utf-8')])
-tgtHfws = set([line.strip() for line in codecs.open(tgtHfwsFile, 'r', 'utf-8')])
+srcHfwList = [line.strip() for line in codecs.open(args.srcHfwFile, 'r', 'utf-8')]
+tgtHfwList = [line.strip() for line in codecs.open(args.tgtHfwFile, 'r', 'utf-8')]
+# Use whole file for counts
+srcHfwCountSet = set(srcHfwList)
+tgtHfwCountSet = set(tgtHfwList)
+# Use subset for lexical features
+srcHfwLexSet = set(srcHfwList[:args.srcHfwLex])
+tgtHfwLexSet = set(tgtHfwList[:args.tgtHfwLex])
+
 
 def isPunct(tok): return all([ unicodedata.category(c) == 'P' for c in tok])
 def isNonterm(tok): return len(tok) >= 3 and tok[0] == '[' and tok[-1] == ']'
@@ -38,24 +62,32 @@ for line in sys.stdin:
     MIN = 0
 
     nontermCount = sum(isNonterm(tok) for tok in srcToks)
-    if nontermCount > MIN: newFeatList.append("NontermCount_%d"%(nontermCount))
+    if args.nontermFeats and nontermCount > MIN:
+        newFeatList.append("NontermCount_%d"%(nontermCount))
 
     srcTerms = [tok for tok in srcToks if not isNonterm(tok)]
     tgtTerms = [tok for tok in tgtToks if not isNonterm(tok)]
 
-    newFeatList.append("SrcWC_%d"%(len(srcTerms)))
-    newFeatList.append("TgtWC_%d"%(len(tgtTerms)))
+    if args.lenFeats:
+        newFeatList.append("SrcWC_%d"%(len(srcTerms)))
+        newFeatList.append("TgtWC_%d"%(len(tgtTerms)))
 
-    srcHfwCount = sum(tok in srcHfws and not isPunct(tok) for tok in srcTerms)
-    tgtHfwCount = sum(tok in tgtHfws and not isPunct(tok) for tok in tgtTerms)
-    if srcHfwCount > MIN: newFeatList.append("SrcHFWC_%d"%(srcHfwCount))
-    if tgtHfwCount > MIN: newFeatList.append("TgtHFWC_%d"%(tgtHfwCount))
+    srcHfwCount = sum(tok in srcHfwCountSet and not isPunct(tok) for tok in srcTerms)
+    tgtHfwCount = sum(tok in tgtHfwCountSet and not isPunct(tok) for tok in tgtTerms)
+    if args.srcHfwCounts:
+        if srcHfwCount > MIN: newFeatList.append("SrcHFWC_%d"%(srcHfwCount))
+    if args.tgtHfwCounts:
+        if tgtHfwCount > MIN: newFeatList.append("TgtHFWC_%d"%(tgtHfwCount))
 
     srcPuncCount = sum(isPunct(tok) for tok in srcTerms)
     tgtPuncCount = sum(isPunct(tok) for tok in tgtTerms)
 
-    srcLexFeats = ["SrcHFW_%s"%tok for tok in srcTerms if tok in srcHfws]
-    tgtLexFeats = ["TgtHFW_%s"%tok for tok in tgtTerms if tok in tgtHfws]
+    srcLexFeats = []
+    tgtLexFeats = []
+    if args.srcHfwLex:
+        srcLexFeats = ["SrcHFW_%s"%tok for tok in srcTerms if tok in srcHfwLexSet]
+    if args.tgtHfwLex:
+        tgtLexFeats = ["TgtHFW_%s"%tok for tok in tgtTerms if tok in tgtHfwLexSet]
     lexFeats = srcLexFeats + tgtLexFeats
     
     def conjoin(featList):
@@ -63,26 +95,33 @@ for line in sys.stdin:
         seedFeatList = list(featList)
         # Only do complex versions so that we don't have to worry about MIN
         #for r in range(2, min(len(seedFeatList), MAX_CONJS)+1):
-        r = MAX_CONJS
+        r = args.conjoin
         for combo in itertools.combinations(seedFeatList, r):
             result.append('_'.join(combo))
         return result
     
-    if useConjs:
+    if args.conjoin:
         #newFeatList += conjoin(newFeatList)
         if srcHfwCount > 0 or tgtHfwCount > 0:
-            newFeatList.append("SrcHFWC_%d_TgtHFWC_%d"%(srcHfwCount, tgtHfwCount))
-            newFeatList.append("NontermCount_%d_SrcHFWC_%d_TgtHFWC_%d"%(nontermCount, srcHfwCount, tgtHfwCount))
+            if args.srcHfwCounts and args.tgtHfwCounts:
+                newFeatList.append("SrcHFWC_%d_TgtHFWC_%d"%(srcHfwCount, tgtHfwCount))
+                if args.nontermFeats:
+                    newFeatList.append("NontermCount_%d_SrcHFWC_%d_TgtHFWC_%d"%(nontermCount, srcHfwCount, tgtHfwCount))
         if len(srcTerms) > 0 or len(tgtTerms) > 0:
-            newFeatList.append("SrcWC_%d_TgtWC_%d"%(len(srcTerms), len(tgtTerms)))
-            newFeatList.append("NontermCount_%d_SrcWC_%d_TgtWC_%d"%(nontermCount, len(srcTerms), len(tgtTerms)))
-            if srcHfwCount > 0 or tgtHfwCount > 0:
-                newFeatList.append("SrcWC_%d_TgtWC_%d_SrcHFWC_%d_TgtHFWC_%d"%(len(srcTerms), len(tgtTerms), srcHfwCount, tgtHfwCount))
-                newFeatList.append("NontermCount_%d_SrcWC_%d_TgtWC_%d_SrcHFWC_%d_TgtHFWC_%d"%(nontermCount, len(srcTerms), len(tgtTerms), srcHfwCount, tgtHfwCount))
+            if args.lenFeats:
+                newFeatList.append("SrcWC_%d_TgtWC_%d"%(len(srcTerms), len(tgtTerms)))
+                if args.nontermFeats:
+                    newFeatList.append("NontermCount_%d_SrcWC_%d_TgtWC_%d"%(nontermCount, len(srcTerms), len(tgtTerms)))
+                if srcHfwCount > 0 or tgtHfwCount > 0:
+                    if args.srcHfwCounts and args.tgtHfwCounts:
+                        newFeatList.append("SrcWC_%d_TgtWC_%d_SrcHFWC_%d_TgtHFWC_%d"%(len(srcTerms), len(tgtTerms), srcHfwCount, tgtHfwCount))
+                        if args.nontermFeats:
+                            newFeatList.append("NontermCount_%d_SrcWC_%d_TgtWC_%d_SrcHFWC_%d_TgtHFWC_%d"%(nontermCount, len(srcTerms), len(tgtTerms), srcHfwCount, tgtHfwCount))
 
-        for srcFeat in srcLexFeats:
-            for tgtFeat in tgtLexFeats:
-                lexFeats.append("%s_%s"%(srcFeat,tgtFeat))
+        if args.srcHfwLex and args.tgtHfwLex:
+            for srcFeat in srcLexFeats:
+                for tgtFeat in tgtLexFeats:
+                    lexFeats.append("%s_%s"%(srcFeat,tgtFeat))
                 
     feats += ' ' + ' '.join([name+"=1" for name in newFeatList+lexFeats])
     feats = escapeFeat(feats)
