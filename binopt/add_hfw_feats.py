@@ -36,8 +36,6 @@ sys.stdin = codecs.getreader('utf-8')(sys.stdin)
 sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 sys.stderr = codecs.getwriter('utf-8')(sys.stderr)
 
-print args.srcHfwFile
-
 srcHfwList = [line.strip() for line in codecs.open(args.srcHfwFile, 'r', 'utf-8')]
 tgtHfwList = [line.strip() for line in codecs.open(args.tgtHfwFile, 'r', 'utf-8')]
 # Use whole file for counts
