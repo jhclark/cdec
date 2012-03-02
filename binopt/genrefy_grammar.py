@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import sys
 import os.path
+import gzip
 
 (genreFile, graDirOut) = sys.argv[1:]
 genres = [genre.strip() for genre in open(genreFile)]
@@ -13,11 +14,17 @@ if len(graFiles) != len(genres):
   print >>sys.stderr, 'ERROR: Mismatch: Got {} grammars and {} genres'.format(len(graFiles), len(genres))
   sys.exit(1)
 
+def zopen(filename, mode='r'):
+  if filename.endswith('.gz'):
+    return open(filename, mode)
+  else:
+    return gzip.open(filename, mode)
+
 for (graFileIn, genre) in zip(graFiles, genres):
   graFileOut = "{}/{}".format(graDirOut, os.path.basename(graFileIn))
   print >>sys.stderr, "Writing {}".format(graFileOut)
-  with open(graFileIn) as graIn:
-    with open(graFileOut, 'w') as graOut:
+  with zopen(graFileIn) as graIn:
+    with zopen(graFileOut, 'w') as graOut:
       for line in graIn:
         (lhs, src, tgt, feats, align) = line.strip().split(' ||| ')
         featList = feats.split()
