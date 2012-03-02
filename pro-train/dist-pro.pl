@@ -12,7 +12,7 @@ use POSIX ":sys_wait_h";
 my $QSUB_CMD = qsub_args(mert_memory());
 my $default_jobs = env_default_jobs();
 
-my $VEST_DIR="$SCRIPT_DIR/../vest";
+my $VEST_DIR="$SCRIPT_DIR/../dpmert";
 my $BINOPT_DIR="$SCRIPT_DIR/../binopt";
 require "$VEST_DIR/libcall.pl";
 
@@ -303,7 +303,7 @@ while (1){
 	    $retries++;
 	}
 	die "Dev set contains $devSize sentences, but we don't have topbest and hypergraphs for all these! Decoder failure? Check $decoderLog\n" if ($devSize != $num_hgs || $devSize != $num_topbest);
-	my $dec_score = check_output("cat $runFile | $SCORER $refs_comma_sep -l $metric");
+	my $dec_score = check_output("cat $runFile | $SCORER $refs_comma_sep -m $metric");
 	chomp $dec_score;
 	print STDERR "DECODER SCORE: $dec_score\n";
 
@@ -354,7 +354,7 @@ while (1){
 		push @mapoutputs, "$dir/splag.$im1/$mapoutput";
 		$o2i{"$dir/splag.$im1/$mapoutput"} = "$dir/splag.$im1/$shard";
 		check_bash_call("mkdir -p $dir/kbest");
-		my $script = "$MAPPER -s $srcFile -l $metric $refs_comma_sep -w $inweights -K $dir/kbest < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
+		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
 		if ($use_make) {
 			my $script_file = "$dir/scripts/map.$shard";
 			open F, ">$script_file" or die "Can't write $script_file: $!";
