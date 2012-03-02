@@ -116,10 +116,11 @@ env.Append(LEXFLAGS="-s -CF -8")
 #flex -s -CF -8 -o decoder/rule_lexer.cc decoder/rule_lexer.l
 env.CFile(target='decoder/rule_lexer.cc', source="decoder/rule_lexer.l")
 
-for pattern in ['decoder/*.cc', 'decoder/*.c', 'klm/*/*.cc', 'utils/*.cc', 'mteval/*.cc', 'vest/*.cc']: # 'dtree/*.cc', 
+for pattern in ['decoder/*.cc', 'decoder/*.c', 'klm/*/*.cc', 'utils/*.cc', 'mteval/*.cc', 'dpmert/*.cc']: # 'dtree/*.cc', 
     srcs.extend([ file for file in Glob(pattern)
     		       if not 'test' in str(file)
 		       	  and 'build_binary.cc' not in str(file)
+                          and 'atools.cc' not in str(file)
 			  and 'ngram_query.cc' not in str(file)
 			  and 'mbr_kbest.cc' not in str(file)
 			  and 'sri.cc' not in str(file)
@@ -168,16 +169,16 @@ env.Program(target='training/mr_em_adapted_reduce', source=comb('training/mr_em_
 
 # LINKFLAGS='-all-static' appears to be gone as of gcc 4.6
 # It was only ever a libtool option, in truth
-env.Program(target='vest/sentserver', source=['vest/sentserver.c'], LIBS=['pthread'])
-env.Program(target='vest/sentclient', source=['vest/sentclient.c'], LIBS=['pthread'])
-env.Program(target='vest/mr_vest_generate_mapper_input', source=comb('vest/mr_vest_generate_mapper_input.cc', srcs))
-env.Program(target='vest/mr_vest_map', source=comb('vest/mr_vest_map.cc', srcs))
-env.Program(target='vest/mr_vest_reduce', source=comb('vest/mr_vest_reduce.cc', srcs))
+env.Program(target='dpmert/sentserver', source=['dpmert/sentserver.c'], LIBS=['pthread'])
+env.Program(target='dpmert/sentclient', source=['dpmert/sentclient.c'], LIBS=['pthread'])
+env.Program(target='dpmert/mr_dpmert_generate_mapper_input', source=comb('dpmert/mr_dpmert_generate_mapper_input.cc', srcs))
+env.Program(target='dpmert/mr_dpmert_map', source=comb('dpmert/mr_dpmert_map.cc', srcs))
+env.Program(target='dpmert/mr_dpmert_reduce', source=comb('dpmert/mr_dpmert_reduce.cc', srcs))
 
 # Decision tree stuffs
 #env.Program(target='dtree/dtree', source=comb('dtree/dtree.cc', srcs))
 #env.Program(target='dtree/extract_topbest', source=comb('dtree/extract_topbest.cc', srcs))
-#env.Program(target='vest/lo_test', source=comb('vest/lo_test.cc', srcs))
+#env.Program(target='dpmert/lo_test', source=comb('dpmert/lo_test.cc', srcs))
 # TODO: util tests
 
 if mpi:
