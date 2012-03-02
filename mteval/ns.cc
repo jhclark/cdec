@@ -251,8 +251,14 @@ EvaluationMetric* EvaluationMetric::Instance(const string& imetric_id) {
       m = new BleuMetric<4, Koehn>;
     } else if (metric_id == "TER") {
       m = new TERMetric;
-    } else if (metric_id == "METEOR") {
-      m = new ExternalMetric("METEOR", "java -Xmx1536m -jar /Users/cdyer/software/meteor/meteor-1.3.jar - - -mira -lower -t tune -l en");
+    } else if (metric_id.find("METEOR") == 0) {
+      // Usage 1: METEOR (assumes hard coded path)
+      // Usage 2: METEOR:/path/to/meteor.sh (meteor.sh should be executable and contain invokation of meteor with -mira, etc.)
+      string meteor_cmd = "java -Xmx1536m -jar /Users/cdyer/software/meteor/meteor-1.3.jar - - -mira -lower -t tune -l en";
+      if(metric_id.find("METEOR:") == 0) {
+        meteor_cmd = metric_id.substr(7);
+      }
+      m = new ExternalMetric("METEOR", meteor_cmd);
     } else if (metric_id.find("COMB:") == 0) {
       m = new CombinationMetric(metric_id);
     } else {
