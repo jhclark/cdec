@@ -64,6 +64,8 @@ my $CCONFIG = {
   'Trestles' => {
     'HOST_REGEXP' => qr/^trestles/,
     'QSubMemFlag' => '-l pmem=',
+    'JobControl'  => 'fork',
+    'DefaultJobs' => 32,
   },
   'LOCAL' => {  # LOCAL must be last in the list!!!
     'HOST_REGEXP' => qr//,
