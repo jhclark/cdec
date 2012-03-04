@@ -37,7 +37,9 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
 int main(int argc, char** argv) {
   po::variables_map conf;
   InitCommandLine(argc, argv, &conf);
-  string loss_function = UppercaseString(conf["evaluation_metric"].as<string>());
+  // Don't uppercase string since it may contain a path to a script
+  // Besides, this is done in ns.cc anyway
+  string loss_function = conf["evaluation_metric"].as<string>();
   if (loss_function == "COMBI") {
     cerr << "WARNING: 'combi' metric is no longer supported, switching to 'COMB:TER=-0.5;IBM_BLEU=0.5'\n";
     loss_function = "COMB:TER=-0.5;IBM_BLEU=0.5";

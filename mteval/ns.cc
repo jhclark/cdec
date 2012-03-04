@@ -238,7 +238,7 @@ EvaluationMetric* EvaluationMetric::Instance(const string& imetric_id) {
     instances_["NULL"] = NULL;
     is_first = false;
   }
-  const string metric_id = UppercaseString(imetric_id);
+  string metric_id = UppercaseString(imetric_id);
 
   map<string, EvaluationMetric*>::iterator it = instances_.find(metric_id);
   if (it == instances_.end()) {
@@ -256,7 +256,8 @@ EvaluationMetric* EvaluationMetric::Instance(const string& imetric_id) {
       // Usage 2: METEOR:/path/to/meteor.sh (meteor.sh should be executable and contain invokation of meteor with -mira, etc.)
       string meteor_cmd = "java -Xmx1536m -jar /Users/cdyer/software/meteor/meteor-1.3.jar - - -mira -lower -t tune -l en";
       if(metric_id.find("METEOR:") == 0) {
-        meteor_cmd = metric_id.substr(7);
+	metric_id = "METEOR";
+        meteor_cmd = imetric_id.substr(7);
       }
       m = new ExternalMetric("METEOR", meteor_cmd);
     } else if (metric_id.find("COMB:") == 0) {
