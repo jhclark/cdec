@@ -103,7 +103,7 @@ if (GetOptions(
 	"uniq-feats-file=s" => \$uniq_feats_file,
 ) == 0 || @ARGV!=1 || $help) {
 	print_help();
-	exit;
+	die "Invalid options.";
 }
 
 if($do_binning) {
