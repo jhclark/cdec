@@ -51,6 +51,8 @@ def isNonterm(tok): return len(tok) >= 3 and tok[0] == '[' and tok[-1] == ']'
 def escapeFeat(name): return name.replace(';','SEMI')
 
 for line in sys.stdin:
+    while not line.endswith('\n'):
+        line += sys.stdin.next() # don't break lines on special unicode markers
     (lhs, src, tgt, feats, align) = line.strip().split(' ||| ')
     srcToks = src.split()
     tgtToks = tgt.split()
