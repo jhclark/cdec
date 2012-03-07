@@ -6,7 +6,7 @@ def zopen(filename):
     if filename.endswith('.gz'):
         # Way faster than internal gzip (see http://stackoverflow.com/questions/8302911/python-equivalent-of-piping-file-output-to-gzip-in-perl-using-a-pipe)
         import subprocess
-        p = subprocess.Popen("zcat " + f, shell=True, stdout=subprocess.PIPE)
+        p = subprocess.Popen("zcat " + filename, shell=True, stdout=subprocess.PIPE)
         return p.stdout
     else:
         return open(filename)
