@@ -2,6 +2,15 @@
 from __future__ import division
 from collections import defaultdict
 
+def zopen(filename):
+    if filename.endswith('.gz'):
+        # Way faster than internal gzip (see http://stackoverflow.com/questions/8302911/python-equivalent-of-piping-file-output-to-gzip-in-perl-using-a-pipe)
+        import subprocess
+        p = subprocess.Popen("zcat " + f, shell=True, stdout=subprocess.PIPE)
+        return p.stdout
+    else:
+        return open(filename)
+
 def bin(entries):
     eventCount = sum(entries.values())
     sortedEntries = sorted(entries.iteritems())
@@ -34,7 +43,7 @@ def bin(entries):
 def ngramIterator(lmFile):
     import os.path
     sz = os.path.getsize(lmFile)
-    f = open(lmFile)
+    f = zopen(lmFile)
     n = "0"
     prevPct = 0.0
     for line in f:
