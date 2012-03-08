@@ -89,7 +89,8 @@ for line in sys.stdin:
     if args.tgtHfwLex:
         tgtLexFeats = ["TgtHFW_%s"%tok for tok in tgtTerms if tok in tgtHfwLexSet]
     lexFeats = srcLexFeats + tgtLexFeats
-    
+
+    # XXX: Unused
     def conjoin(featList):
         result = []
         seedFeatList = list(featList)
@@ -100,22 +101,22 @@ for line in sys.stdin:
             result.append('_'.join(combo))
         return result
     
-    if args.conjoin:
+    if args.conjoin >= 2:
         #newFeatList += conjoin(newFeatList)
         if srcHfwCount > 0 or tgtHfwCount > 0:
             if args.srcHfwCounts and args.tgtHfwCounts:
                 newFeatList.append("SrcHFWC_%d_TgtHFWC_%d"%(srcHfwCount, tgtHfwCount))
-                if args.nontermFeats:
+                if args.conjoin >= 3 and args.nontermFeats:
                     newFeatList.append("NontermCount_%d_SrcHFWC_%d_TgtHFWC_%d"%(nontermCount, srcHfwCount, tgtHfwCount))
         if len(srcTerms) > 0 or len(tgtTerms) > 0:
             if args.lenFeats:
                 newFeatList.append("SrcWC_%d_TgtWC_%d"%(len(srcTerms), len(tgtTerms)))
-                if args.nontermFeats:
+                if args.conjoin >= 3 and args.nontermFeats:
                     newFeatList.append("NontermCount_%d_SrcWC_%d_TgtWC_%d"%(nontermCount, len(srcTerms), len(tgtTerms)))
                 if srcHfwCount > 0 or tgtHfwCount > 0:
-                    if args.srcHfwCounts and args.tgtHfwCounts:
+                    if args.conjoin >= 4 and args.srcHfwCounts and args.tgtHfwCounts:
                         newFeatList.append("SrcWC_%d_TgtWC_%d_SrcHFWC_%d_TgtHFWC_%d"%(len(srcTerms), len(tgtTerms), srcHfwCount, tgtHfwCount))
-                        if args.nontermFeats:
+                        if args.conjoin >= 5 and args.nontermFeats:
                             newFeatList.append("NontermCount_%d_SrcWC_%d_TgtWC_%d_SrcHFWC_%d_TgtHFWC_%d"%(nontermCount, len(srcTerms), len(tgtTerms), srcHfwCount, tgtHfwCount))
 
         if args.srcHfwLex and args.tgtHfwLex:
