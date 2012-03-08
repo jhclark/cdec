@@ -3,13 +3,14 @@ from __future__ import division
 from collections import defaultdict
 
 def zopen(filename):
+    f = open(filename)
     if filename.endswith('.gz'):
         # Way faster than internal gzip (see http://stackoverflow.com/questions/8302911/python-equivalent-of-piping-file-output-to-gzip-in-perl-using-a-pipe)
         import subprocess
         p = subprocess.Popen("zcat " + filename, shell=True, stdout=subprocess.PIPE)
-        return p.stdout
+        return (p.stdout, f)
     else:
-        return open(filename)
+        return (f,f)
 
 def bin(entries):
     eventCount = sum(entries.values())
@@ -43,7 +44,7 @@ def bin(entries):
 def ngramIterator(lmFile):
     import os.path
     sz = os.path.getsize(lmFile)
-    f = zopen(lmFile)
+    (f, fraw) = zopen(lmFile)
     n = "0"
     prevPct = 0.0
     for line in f:
@@ -52,8 +53,8 @@ def ngramIterator(lmFile):
             n = line[1]
             print >>sys.stderr, "Reading %s grams..."%n
         if line.startswith('-'):
-            pct = f.tell() / sz
-            if pct >= prevPct + 0.05:
+            pct = fraw.tell() / sz
+            if pct >= prevPct + 0.01:
                 print >>sys.stderr, "%.0f%% through the file..."%(pct*100)
                 prevPct = pct
             cols = line.split('\t')
