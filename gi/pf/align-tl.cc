@@ -19,6 +19,7 @@
 #include "mfcr.h"
 #include "corpus.h"
 #include "ngram_base.h"
+#include "transliterations.h"
 
 using namespace std;
 using namespace tr1;
@@ -29,6 +30,10 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
   opts.add_options()
         ("samples,s",po::value<unsigned>()->default_value(1000),"Number of samples")
         ("input,i",po::value<string>(),"Read parallel data from")
+        ("max_src_chunk", po::value<unsigned>()->default_value(4), "Maximum size of translitered chunk in source")
+        ("max_trg_chunk", po::value<unsigned>()->default_value(4), "Maximum size of translitered chunk in target")
+        ("min_transliterated_src_length", po::value<unsigned>()->default_value(3), "Minimum length of source words considered for transliteration")
+        ("filter_ratio", po::value<double>()->default_value(0.66), "Filter ratio: basically, if the lengths differ by less than this ratio, mark the pair as non-transliteratable")
         ("random_seed,S",po::value<uint32_t>(), "Random seed");
   po::options_description clo("Command line options");
   clo.add_options()
@@ -304,23 +309,29 @@ int main(int argc, char** argv) {
   ExtractLetters(vocabf, &letters, NULL);
   letters[TD::Convert("NULL")].clear();
 
-  BasicLexicalAlignment x(letters, vocabe.size(), letset.size(), &corpus);
-  x.InitializeRandom();
-  const unsigned samples = conf["samples"].as<unsigned>();
-  for (int i = 0; i < samples; ++i) {
-    for (int j = 65; j < 67; ++j) Debug(corpus[j]);
-    cerr << i << "\t" << x.tmodel.r.size() << "\t";
-    if (i % 7 == 6) x.ResampleHyperparemeters();
-    x.ResampleCorpus();
-    if (i > (samples / 5) && (i % 10 == 9)) for (int j = 0; j < corpus.size(); ++j) AddSample(&corpus[j]);
-  }
-  for (unsigned i = 0; i < corpus.size(); ++i)
-    WriteAlignments(corpus[i]);
-  //ModelAndData posterior(x, &corpus, vocabe, vocabf);
-  x.tmodel.Summary();
-  x.up0.Summary();
+  // TODO configure this
+  const int max_src_chunk = conf["max_src_chunk"].as<unsigned>();
+  const int max_trg_chunk = conf["max_trg_chunk"].as<unsigned>();
+  const double filter_rat = conf["filter_ratio"].as<double>();
+  const int min_trans_src = conf["min_transliterated_src_length"].as<unsigned>();
+  Transliterations tl(max_src_chunk, max_trg_chunk, filter_rat);
 
-  //posterior.Sample();
+  cerr << "Initializing transliteration graph structures ...\n";
+  for (int i = 0; i < corpus.size(); ++i) {
+    const vector<int>& src = corpus[i].src;
+    const vector<int>& trg = corpus[i].trg;
+    for (int j = 0; j < src.size(); ++j) {
+      const vector<int>& src_let = letters[src[j]];
+      for (int k = 0; k < trg.size(); ++k) {
+        const vector<int>& trg_let = letters[trg[k]];
+        tl.Initialize(src[j], src_let, trg[k], trg_let);
+        if (src_let.size() < min_trans_src)
+          tl.Forbid(src[j], src_let, trg[k], trg_let);
+      }
+    }
+  }
+  cerr << endl;
+  tl.GraphSummary();
 
   return 0;
 }

@@ -1,13 +1,22 @@
-bin_PROGRAMS = cbgi brat dpnaive pfbrat pfdist itg pfnaive condnaive align-lexonly align-lexonly-pyp learn_cfg
+bin_PROGRAMS = cbgi brat dpnaive pfbrat pfdist itg pfnaive condnaive align-lexonly align-lexonly-pyp learn_cfg pyp_lm nuisance_test align-tl
 
 noinst_LIBRARIES = libpf.a
-libpf_a_SOURCES = base_distributions.cc reachability.cc cfg_wfst_composer.cc corpus.cc unigrams.cc ngram_base.cc
+
+libpf_a_SOURCES = base_distributions.cc reachability.cc cfg_wfst_composer.cc corpus.cc unigrams.cc ngram_base.cc transliterations.cc
+
+nuisance_test_SOURCES = nuisance_test.cc
+nuisance_test_LDADD = libpf.a $(top_srcdir)/decoder/libcdec.a $(top_srcdir)/mteval/libmteval.a $(top_srcdir)/utils/libutils.a $(top_srcdir)/klm/lm/libklm.a $(top_srcdir)/klm/util/libklm_util.a -lz
 
 align_lexonly_SOURCES = align-lexonly.cc
 
 align_lexonly_pyp_SOURCES = align-lexonly-pyp.cc
 
+align_tl_SOURCES = align-tl.cc
+align_tl_LDADD = libpf.a $(top_srcdir)/decoder/libcdec.a $(top_srcdir)/mteval/libmteval.a $(top_srcdir)/utils/libutils.a $(top_srcdir)/klm/lm/libklm.a $(top_srcdir)/klm/util/libklm_util.a -lz
+
 itg_SOURCES = itg.cc
+
+pyp_lm_SOURCES = pyp_lm.cc
 
 learn_cfg_SOURCES = learn_cfg.cc
 

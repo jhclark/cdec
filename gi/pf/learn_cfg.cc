@@ -127,20 +127,20 @@ struct HieroLMModel {
       nts(num_nts, CCRP<TRule>(1,1,1,1)) {}
 
   prob_t Prob(const TRule& r) const {
-    return nts[nt_id_to_index[-r.lhs_]].probT<prob_t>(r, p0(r));
+    return nts[nt_id_to_index[-r.lhs_]].prob(r, p0(r));
   }
 
   inline prob_t p0(const TRule& r) const {
     if (kHIERARCHICAL_PRIOR)
-      return q0.probT<prob_t>(r, base(r));
+      return q0.prob(r, base(r));
     else
       return base(r);
   }
 
   int Increment(const TRule& r, MT19937* rng) {
-    const int delta = nts[nt_id_to_index[-r.lhs_]].incrementT<prob_t>(r, p0(r), rng);
+    const int delta = nts[nt_id_to_index[-r.lhs_]].increment(r, p0(r), rng);
     if (kHIERARCHICAL_PRIOR && delta)
-      q0.incrementT<prob_t>(r, base(r), rng);
+      q0.increment(r, base(r), rng);
     return delta;
     // return x.increment(r);
   }
@@ -183,9 +183,9 @@ struct HieroLMModel {
       nts[i].resample_hyperparameters(rng);
     if (kHIERARCHICAL_PRIOR) {
       q0.resample_hyperparameters(rng);
-      cerr << "[base d=" << q0.discount() << ", alpha=" << q0.discount() << "]";
+      cerr << "[base d=" << q0.discount() << ", s=" << q0.strength() << "]";
     }
-    cerr << " d=" << nts[0].discount() << ", alpha=" << nts[0].concentration() << endl;
+    cerr << " d=" << nts[0].discount() << ", s=" << nts[0].strength() << endl;
   }
 
   const BaseRuleModel base;
