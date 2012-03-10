@@ -1,4 +1,5 @@
 #include "ff_jlm.h"
+#include "ff_jlm_hash.h"
 
 #include <cstring>
 #include <iostream>
@@ -20,10 +21,12 @@
 #include "tdict.h"
 #include "lm/model.hh"
 #include "lm/enumerate_vocab.hh"
-#include "murmur_hash.h"
 #include "vector_util.h"
 
-#define JLM_ONE_FEAT 1
+// we no longer support multiple features per n-gram
+// we'll have to modify the mmapped format to have a
+// max vector size if we want to go back to this
+//#define JLM_ONE_FEAT 1
 
 using namespace std;
 
@@ -35,11 +38,7 @@ static const WordID LEFT_MARKER = 0x80000000;
 static const WordID REMOVE_LEFT_MARKER = 0x7FFFFFFF;
 
 typedef unsigned short conj_fid;
-#ifdef JLM_ONE_FEAT
-typedef boost::unordered_map<uint64_t, pair<int,int> > FeatMap;
-#else
-typedef boost::unordered_map<uint64_t, pair<vector<int> , vector<int> > FeatMap;
-#endif
+typedef jlm::Table FeatMap;
 
 typedef boost::unordered_map<pair<WordID,WordID>, pair<float,int> > LexProbMap;
 
@@ -719,7 +718,7 @@ public:
 				if (context_complete) {
 					//cerr << "Complete (in term)" << endl;
                                   FireLMFeats(features, ngram, words_since_phrase_boundary);
-					FireConjFeats(features, conj_fid_vec, false);
+                                  FireConjFeats(features, conj_fid_vec, false);
 				} else {
 					if (remnant) {
                                           if(words_since_phrase_boundary == 0) {
@@ -728,8 +727,8 @@ public:
                                           } else {
                                             SetIthUnscoredWord(num_estimated, cur_word, remnant);
                                           }
-						//cerr << "Storing (term) IthConjVec in remnant at " << num_estimated << endl;
-						SetIthConjVec(num_estimated, conj_fid_vec, remnant);
+					  //cerr << "Storing (term) IthConjVec in remnant at " << num_estimated << endl;
+                                          SetIthConjVec(num_estimated, conj_fid_vec, remnant);
 					}
 					++num_estimated;
 					//cerr << "Est (in nonterm)" << endl;
@@ -755,7 +754,20 @@ public:
 		}
 	}
 
-  inline void FireLMFeats(SparseVector<double>* feats,
+  int GetID(const int orig, std::map<int,int>& m, bool must_have=true) {
+    std::map<int,int>::const_iterator match = m.find(orig);
+    if(match == m.end()) {
+      if(must_have) {
+        cerr << "ERROR: Could not map ID for feature or word " << orig << endl;
+        abort();
+      } else {
+        return -1;
+      }
+    }
+    return match->second;
+  }
+
+  void FireLMFeats(SparseVector<double>* feats,
                           const vector<WordID>& ngram,
                           const int words_since_phrase_boundary1) {
     
@@ -771,7 +783,9 @@ public:
 		  // TODO: We could also store the n-grams in reverse order to make dropping more efficient
 		vector<WordID> ngram_buf;
 		ngram_buf.reserve(ngram.size());
-		ngram_buf = ngram;
+                for(int i=0; i<ngram.size(); ++i) {
+                  ngram_buf.push_back(GetID(ngram.at(i), wid2jlm_, false));
+                }
 		vector<WordID> ngram_context_buf;
 		ngram_context_buf.reserve(ngram.size());
 		ngram_context_buf = ngram;
@@ -780,86 +794,60 @@ public:
 
 		for(int n=ngram.size()-1; n>=0; --n) {
 		  
-		  uint64_t hash = Hash(ngram_buf);
-			FeatMap::const_iterator feat_vec_match = disc_feats_.find(hash);
-			if(feat_vec_match != disc_feats_.end()) {
-				found_match = true;
-#ifdef JLM_ONE_FEAT
-				const int feat = feat_vec_match->second.first;
-//				cerr << "Firing feat " << FD::Convert(feat) << " for ngram " << ngram_buf << endl;
+		  uint64_t hash = jlm::Hash(ngram_buf);
+		  const jlm::Entry *feat_vec_match = NULL;
+		  disc_feats_->Find(hash, feat_vec_match);
+		  if(feat_vec_match != NULL) {
+		    found_match = true;
 
-				// TODO: Disabling firing original feat?
-				feats->set_value(feat, 1);
-				for(int j=0; j<feat_mappers_.size(); ++j) {
-				  const int fine_feat = feat_mappers_.at(j)->MapFeat(feat, ngram_buf, words_since_phrase_boundary);
-				  feats->set_value(fine_feat, 1);
-				}
-#else
-				const vector<int>& feat_vec = feat_vec_match->second.first;
-				for(int i=0; i<feat_vec.size(); ++i) {
-				   //cerr << ngram << " :: Feat"<<n<<": " << i << "/" << feat_vec.size() << ": " << feat_vec.at(i) << endl;
-                                  const int feat = feat_vec.at(i);
-				  // TODO: Disabling firing original feat?
-				  feats->set_value(feat, 1);
-				  for(int j=0; j<feat_mappers_.size(); ++j) {
-				    const int fine_feat = feat_mappers_.at(j)->MapFeat(feat, ngram_buf, words_since_phrase_boundary);
-				    feats->set_value(fine_feat, 1);
-				  }
-				}
-#endif
-			} else if(!ngram_context_buf.empty()) {
-			  // we can't backoff farther than a unigram
-				uint64_t backoff_hash = Hash(ngram_context_buf);
-				FeatMap::const_iterator backoff_feat_vec_match = disc_feats_.find(backoff_hash);
-				if(backoff_feat_vec_match != disc_feats_.end()) {
-#ifdef JLM_ONE_FEAT
-				const int backoff_feat = backoff_feat_vec_match->second.second;
-				if(backoff_feat != -1) {
-				  feats->set_value(backoff_feat, 1);
-				  for(int j=0; j<feat_mappers_.size(); ++j) {
-				    const int fine_backoff_feat = feat_mappers_.at(j)->MapFeat(backoff_feat, ngram_context_buf, words_since_phrase_boundary);
-				    feats->set_value(fine_backoff_feat, 1);
-				  }
-				}
-#else
-					const vector<int>& backoff_feat_vec = backoff_feat_vec_match->second.second;
-					for(int i=0; i<backoff_feat_vec.size(); ++i) {
-					  //cerr << ngram << " :: Backoff Feat"<<n<<": " << i << "/" << backoff_feat_vec.size() << ": " << backoff_feat_vec.at(i) << endl;
-                                          const int backoff_feat = backoff_feat_vec.at(i);
-					  feats->set_value(backoff_feat, 1);
-					  for(int j=0; j<feat_mappers_.size(); ++j) {
-					    const int fine_backoff_feat = feat_mappers_.at(j)->MapFeat(backoff_feat, ngram_context_buf, words_since_phrase_boundary);
-					    feats->set_value(fine_backoff_feat, 1);
-					  }
-					}
-#endif
-				}
+		    const int feat = feat_vec_match->match_feat;
+                    const int cdec_feat = GetID(feat, jlm2fid_);
+		    // cerr << "Firing feat " << FD::Convert(feat) << " for ngram " << ngram_buf << endl;
+		    
+		    // TODO: Disabling firing original feat?
+		    feats->set_value(cdec_feat, 1);
+		    for(int j=0; j<feat_mappers_.size(); ++j) {
+		      const int fine_feat = feat_mappers_.at(j)->MapFeat(feat, ngram_buf, words_since_phrase_boundary);
+                      const int cdec_fine_feat = GetID(fine_feat, jlm2fid_);
+		      feats->set_value(cdec_fine_feat, 1);
+		    }
+		  } else if(!ngram_context_buf.empty()) {
+		    // we can't backoff farther than a unigram
+		    uint64_t backoff_hash = jlm::Hash(ngram_context_buf);
+		    const jlm::Entry *backoff_feat_vec_match = NULL;
+		    disc_feats_->Find(backoff_hash, backoff_feat_vec_match);
+		    if(backoff_feat_vec_match != NULL) {
+		      const int backoff_feat = backoff_feat_vec_match->miss_feat;
+		      if(backoff_feat != -1) {
+                        const int cdec_backoff_feat = GetID(backoff_feat, jlm2fid_);
+			feats->set_value(cdec_backoff_feat, 1);
+			for(int j=0; j<feat_mappers_.size(); ++j) {
+			  const int fine_backoff_feat = feat_mappers_.at(j)->MapFeat(backoff_feat, ngram_context_buf, words_since_phrase_boundary);
+                          const int cdec_fine_backoff_feat = GetID(fine_backoff_feat, jlm2fid_);
+			  feats->set_value(cdec_fine_backoff_feat, 1);
 			}
-			// remove the first word from the left of each n-gram buffer
-			if(!ngram_buf.empty()) {
-			  ngram_buf.erase(ngram_buf.begin());
-			}
-			if(!ngram_context_buf.empty()) {
-			  ngram_context_buf.erase(ngram_context_buf.begin());
-			}
+		      }
+		    }
+		  }
+		  // remove the first word from the left of each n-gram buffer
+		  if(!ngram_buf.empty()) {
+		    ngram_buf.erase(ngram_buf.begin());
+		  }
+		  if(!ngram_context_buf.empty()) {
+		    ngram_context_buf.erase(ngram_context_buf.begin());
+		  }
 		} // for each n in order
 		if(!found_match) {
 			// TODO: Precache this?
 			vector<WordID> unk_ngram;
-			unk_ngram.push_back(jCDEC_UNK_);
-			uint64_t hash = Hash(unk_ngram);
-			FeatMap::const_iterator feat_vec_match = disc_feats_.find(hash);
-			if(feat_vec_match != disc_feats_.end()) {
-#ifdef JLM_ONE_FEAT
-				const int feat = feat_vec_match->second.first;
-				feats->set_value(feat, 1);
-#else
-				const vector<int>& feat_vec = feat_vec_match->second.first;
-				found_match = true;
-				for(int i=0; i<feat_vec.size(); ++i) {
-					feats->set_value(feat_vec.at(i), 1);
-				}
-#endif
+			unk_ngram.push_back(GetID(CDEC_UNK_, wid2jlm_, false));
+			uint64_t hash = jlm::Hash(unk_ngram);
+			const jlm::Entry *feat_vec_match = NULL;
+			disc_feats_->Find(hash, feat_vec_match);
+			if(feat_vec_match != NULL) {
+                          const int feat = feat_vec_match->match_feat;
+                          const int cdec_feat = GetID(feat, jlm2fid_);
+                          feats->set_value(cdec_feat, 1);
 			}
 		}
 	}
@@ -925,6 +913,8 @@ public:
 			LookupWords(*dummy_rule_, dummy_ants_, features, NULL, NULL);
 
 		} else { // rules DO produce <s> ... </s>
+                  cerr << "ERROR: JLM does not yet support rules with <s> and </s>" << endl;
+                  abort();
 			double p = 0;
 			if (!GetFlag(state, HAS_EOS_ON_RIGHT)) {
 				p -= 100;
@@ -945,7 +935,7 @@ public:
 		if (word2class_map_.empty())
 			return w;
 		if (w >= word2class_map_.size())
-			return jCDEC_UNK_;
+			return CDEC_UNK_;
 		else
 			return word2class_map_[w];
 	}
@@ -959,7 +949,7 @@ public:
                            const vector<int>& conjoin_with_fids,
 			   const vector<int>& conjoined_fids,
 			   const vector<boost::shared_ptr<FeatureMapper> >& feat_mappers) :
-			jCDEC_UNK_(TD::Convert("<unk>")),
+			CDEC_UNK_(TD::Convert("<unk>")),
                         add_sos_eos_(!explicit_markers),
                         fid_(fid),
 			feat_mappers_(feat_mappers)
@@ -1003,105 +993,51 @@ public:
 			LoadWordClasses(mapfile);
 	}
 
-	inline uint64_t Hash(const vector<WordID>& ngram) const {
-		return Hash(ngram, 0, ngram.size());
-	}
+	void LoadDiscLM(const string& filename) {
+	  // 1) mmap the file
+	  util::scoped_fd file(util::OpenReadOrThrow(filename.c_str()));
+	  uint64_t size = util::SizeFile(file.get());
+	  MapRead(util::POPULATE_OR_READ, file.get(), 0, size, table_mem_);
+          disc_feats_.reset(new jlm::Table(table_mem_.get(), table_mem_.size()));
 
-	// begin is the index of the first token to be scored
-	// end is the index just beyond the last token to be scored
-	inline uint64_t Hash(const vector<WordID>& ngram, int iBegin, int iEnd) const {
-	  const char* begin = reinterpret_cast<const char*>(&*(ngram.begin() + iBegin));
-	  int len = sizeof(WordID) * (iEnd - iBegin);
-	  return MurmurHash64(begin, len);
-	}
+	  // 2) Load feat, vocab, and order
+          cerr << "  Loading discriminative LM metadata from " << file << " ..." << endl;
+	  ReadFile rf(filename + ".meta");
+	  istream& in = *rf.stream();
+	  string line;
+	  order_ = 0;
+	  while (in) {
+	    getline(in, line);
+	    if (!in)
+	      continue;
 
-	void LoadDiscLM(const string& file) {
-		ReadFile rf(file);
-		istream& in = *rf.stream();
-		string line;
-		cerr << "  Loading discriminative LM features from " << file << " ...\n";
-		order_ = 0;
-		int entries = 0;
-		int beforeFid = FD::NumFeats();
-		while (in) {
-			getline(in, line);
-			if (!in)
-				continue;
+            // XXX: I'm a terrible person for using const_cast
+            if(line.find("ORDER: ") == 0) {
+              order_ = boost::lexical_cast<int>(line.substr(7));
+            } else if(line.find("WORD: ") == 0) {
+              char* col = strtok(const_cast<char*>(line.c_str()), " ");
+              int cdec_wid = TD::Convert(string(strtok(NULL, " ")));
+              int jlm_wid = atoi(strtok(NULL, " "));
+              wid2jlm_.insert(pair<int,int>(cdec_wid, jlm_wid));
 
-			++entries;
+              // TODO: Make sure all lookups convert WIDS
+            } else if(line.find("FEAT: ") == 0) {
+              char* col = strtok(const_cast<char*>(line.c_str()), " ");
+              int cdec_fid = FD::Convert(string(strtok(NULL, " ")));
+              int jlm_fid = atoi(strtok(NULL, " "));
+              jlm2fid_.insert(pair<int,int>(jlm_fid,cdec_fid));
 
-			// XXX: I'm a terrible person for using const_cast
-			char* ngram = strtok(const_cast<char*>(line.c_str()), "\t");
-			char* feats = strtok(NULL, "\t");
-			char* backoff_feats = strtok(NULL, "\t");
-
-			//cerr << "Got ngram: " << ngram << endl;
-
-			char* tok = strtok(ngram, " ");
-			vector<WordID> toks;
-			while (tok != NULL) {
-				int wid = TD::Convert(string(tok)); // ugh, copy
-				//cerr << "Token: " << tok << " -> " << wid << endl;
-				toks.push_back(wid);
-				tok = strtok(NULL, " ");
-			}
-			uint64_t hash = Hash(toks);
-			order_ = max(order_, (int) toks.size());
-
-#ifdef JLM_ONE_FEAT
-			pair<int, int>& feat_val = disc_feats_[hash];
-
-			char* feat = strtok(feats, " ");
-			feat_val.first = FD::Convert(string(feat)); // ugh, copy
-                        all_feats_.insert(feat_val.first);
-			if(strtok(NULL, " ") != NULL) {
-				cerr << "ERROR: JLM: Expeted only one feature" << endl;
-				abort();
-			}
-
-			if(backoff_feats != NULL) {
-				feat = strtok(backoff_feats, " ");
-				feat_val.second = FD::Convert(string(feat)); // ugh, copy
-                                all_feats_.insert(feat_val.second);
-				if(strtok(NULL, " ") != NULL) {
-					cerr << "ERROR: JLM: Expeted only one feature" << endl;
-					abort();
-				}
-			} else {
-				feat_val.second = -1;
-			}
-#else
-			pair<vector<int> , vector<int> >& feat_vec = disc_feats_[hash];
-
-			char* feat = strtok(feats, " ");
-			while (feat != NULL) {
-				int fid = FD::Convert(string(feat)); // ugh, copy
-				//cerr << "Feat: " << feat << " -> " << fid << endl;
-				feat_vec.first.push_back(fid);
-                                all_feats_.insert(fid);
-				feat = strtok(NULL, " ");
-			}
-
-			if(backoff_feats != NULL) {
-				feat = strtok(backoff_feats, " ");
-				while (feat != NULL) {
-					int fid = FD::Convert(string(feat)); // ugh, copy
-					//cerr << "Backoff Feat: " << feat << " -> " << fid << endl;
-					feats_vec.second.push_back(fid);
-                                        all_feats_.insert(fid);
-					feat = strtok(NULL, " ");
-				}
-			}
-
-			//cerr << "Loaded ngram " << ngram << "; toks = "<< toks << "; hash = " << hash << "; feat count = " << feat_vec.size() << "; backoff feat count = " << backoff_feats_vec.size() << endl;
-#endif
- 		}
-		int lm_feat_count = FD::NumFeats() - beforeFid;
-		cerr << "JLM: Loaded " << entries << " entries with " << lm_feat_count << " features; Max order is " << order_ << endl;
-
-		for(int i=0; i<feat_mappers_.size(); ++i) {
-		  feat_mappers_.at(i)->InitFeats(all_feats_, order_);
-		}
+              // TODO: Make sure all lookups convert FIDS
+            } else {
+              cerr << "ERROR: Invalid line: " << line << endl;
+              abort();
+            }
+	  }
+	  cerr << "JLM: Loaded " << jlm2fid_.size() << " features; Max order is " << order_ << endl;
+	  
+	  for(int i=0; i<feat_mappers_.size(); ++i) {
+	    feat_mappers_.at(i)->InitFeats(all_feats_, order_);
+	  }
 	}
 
 	void LoadWordClasses(const string& file) {
@@ -1152,7 +1088,7 @@ public:
 	}
 
 private:
-	WordID jCDEC_UNK_;
+	WordID CDEC_UNK_;
 	WordID jSOS_; // <s> - requires special handling.
 	WordID jEOS_; // </s>
 	const bool add_sos_eos_; // flag indicating whether the hypergraph produces <s> and </s>
@@ -1177,7 +1113,10 @@ private:
 	vector<int> conjoined_fids_;
 	int conj_vec_size_;
 
-	FeatMap disc_feats_;
+  util::scoped_memory table_mem_;
+  boost::scoped_ptr<jlm::Table> disc_feats_;
+  map<int,int> jlm2fid_;
+  map<int,int> wid2jlm_;
 
   set<int> all_feats_;
 
@@ -1252,7 +1191,7 @@ void JLanguageModel::TraversalFeaturesImpl(const SentenceMetadata& smeta,
 	// don't conjoin the OOVs... for now
 //  if (oov_fid_) {
 //    if (oovs) features->set_value(oov_fid_, oovs);
-//    if (est_oovs) estimated_features->set_value(oov_fid_, est_oovs);
+//    if (est_oovs) estimated_features->set_value(oov_fid_ est_oovs);
 //  }
 }
 
