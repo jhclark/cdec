@@ -22,6 +22,10 @@ class NgramDetector : public FeatureFunction {
                                      SparseVector<double>* features,
                                      SparseVector<double>* estimated_features,
                                      void* out_context) const;
+
+  // read any observable features to conjoin with
+  virtual void PrepareForInput(const SentenceMetadata& smeta);
+
  private:
   NgramDetectorImpl* pimpl_;
 };

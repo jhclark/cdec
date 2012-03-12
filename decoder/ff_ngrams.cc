@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <iostream>
+#include <set>
 
 #include <boost/scoped_ptr.hpp>
 
@@ -9,6 +10,7 @@
 #include "stringlib.h"
 #include "hg.h"
 #include "tdict.h"
+#include "sentence_metadata.h"
 
 using namespace std;
 
@@ -57,10 +59,15 @@ namespace {
   }
 }
 
-static bool ParseArgs(string const& in, bool* explicit_markers, unsigned* order) {
+// -x : Grammar uses explicit SOS and BOS markers?
+// -o : What order ngrams should be emitted?
+// -F : ngram file, with list of ngrams that should be included
+// NOTE : observable features must be annotated on source sentence using SGML will be conjoined
+static bool ParseArgs(string const& in, bool* explicit_markers, unsigned* order, string* ngram_file) {
   vector<string> const& argv=SplitOnWhitespace(in);
   *explicit_markers = false;
   *order = 3;
+  *ngram_file = "";
 #define LMSPEC_NEXTARG if (i==argv.end()) {            \
     cerr << "Missing argument for "<<*last<<". "; goto usage; \
     } else { ++i; }
@@ -75,6 +82,9 @@ static bool ParseArgs(string const& in, bool* explicit_markers, unsigned* order)
         break;
       case 'o':
         LMSPEC_NEXTARG; *order=atoi((*i).c_str());
+        break;
+      case 'F':
+        LMSPEC_NEXTARG; *ngram_file=*i;
         break;
 #undef LMSPEC_NEXTARG
       default:
@@ -147,6 +157,23 @@ class NgramDetectorImpl {
     SetFlag(flag, HAS_FULL_CONTEXT, state);
   }
 
+  inline int GetFeatureID(WordID* buf, int n) const {
+    const char* code="_UBT456789"; // prefix code (unigram, bigram, etc.)
+    ostringstream os;
+    os << code[n] << ':';
+    for (int i = n-1; i >= 0; --i) {
+      os << (i != n-1 ? "_" : "");
+      const string& tok = TD::Convert(buf[i]);
+      if (tok.find('=') == string::npos)
+        os << tok;
+      else
+        os << Escape(tok);
+    }
+    string feat_name = os.str();
+    int fid = FD::Convert(feat_name);
+    return fid;
+  }
+
   void FireFeatures(const State<5>& state, WordID cur, SparseVector<double>* feats) {
     FidTree* ft = &fidroot_;
     int n = 0;
@@ -158,28 +185,42 @@ class NgramDetectorImpl {
       int& fid = ft->fids[curword];
       ++n;
       if (!fid) {
-        const char* code="_UBT456789"; // prefix code (unigram, bigram, etc.)
-        ostringstream os;
-        os << code[n] << ':';
-        for (int i = n-1; i >= 0; --i) {
-          os << (i != n-1 ? "_" : "");
-          const string& tok = TD::Convert(buf[i]);
-          if (tok.find('=') == string::npos)
-            os << tok;
-          else
-            os << Escape(tok);
-        }
-        fid = FD::Convert(os.str());
+        fid = GetFeatureID(buf, n);
       }
-      feats->set_value(fid, 1);
       ft = &ft->levels[curword];
       --ci;
       if (ci < 0) break;
       curword = state[ci];
+
+      if(allowed_feats_.empty() || allowed_feats_.find(fid) != allowed_feats_.end()) {
+        feats->set_value(fid, 1);
+        for(int i=0; i<obs_feats_.size(); ++i) {
+          int obs_fid = obs_feats_.at(i);
+          int& conj_fid = conj_cache_[pair<int,int>(fid, obs_fid)];
+          if(!conj_fid) {
+            string conj_feat = FD::Convert(obs_fid) + "_" + FD::Convert(fid);
+            conj_fid = FD::Convert(conj_feat);
+          }
+          feats->set_value(conj_fid, 1);
+        }
+      }
     }
   }
 
  public:
+  void PrepareForInput(const SentenceMetadata& smeta) {
+    obs_feats_.clear();
+
+    // get the space-delimited list of features    
+    string value = smeta.GetSGMLValue("features");
+    vector<string> feats;
+    Tokenize(value, ' ', &feats);
+    cerr << "Found " << feats.size() << " SGML observable features: " << value << endl;
+    for(int i=0; i<feats.size(); ++i) {
+      obs_feats_.push_back(FD::Convert(feats.at(i)));
+    }
+  }
+
   void LookupWords(const TRule& rule, const vector<const void*>& ant_states, SparseVector<double>* feats, SparseVector<double>* est_feats, void* remnant) {
     double sum = 0.0;
     double est_sum = 0.0;
@@ -297,7 +338,7 @@ class NgramDetectorImpl {
   }
 
  public:
-  explicit NgramDetectorImpl(bool explicit_markers, unsigned order) :
+  explicit NgramDetectorImpl(bool explicit_markers, unsigned order, const string& ngram_file) :
       kCDEC_UNK(TD::Convert("<unk>")) ,
       add_sos_eos_(!explicit_markers) {
     order_ = order;
@@ -314,6 +355,26 @@ class NgramDetectorImpl {
     dummy_rule_.reset(new TRule("[DUMMY] ||| [BOS] [DUMMY] ||| [1] [2] </s> ||| X=0"));
     kSOS_ = TD::Convert("<s>");
     kEOS_ = TD::Convert("</s>");
+
+    if(!ngram_file.empty()) {
+      ReadFile in_read(ngram_file);
+      istream & in = *in_read.stream();
+      string line;
+      while (getline(in, line)) {
+        if (!line.empty()) {
+          vector<string> toks;
+          Tokenize(line, ' ', &toks);
+          int buf[10];
+          for(int i=0; i<toks.size(); ++i) {
+            buf[toks.size()-i-1] = TD::Convert(toks.at(i));
+          }
+          int fid = GetFeatureID(buf, toks.size());
+          cerr << "Allowed " << FD::Convert(fid) << endl;
+          allowed_feats_.insert(fid);
+        }
+      }
+      cerr << "NgramDetector found " << allowed_feats_.size() << " allowable n-gram features" << endl;
+    }
   }
 
   ~NgramDetectorImpl() {
@@ -345,14 +406,19 @@ class NgramDetectorImpl {
     map<WordID, FidTree> levels;
   };
   mutable FidTree fidroot_;
+
+  vector<int> obs_feats_;
+  set<int> allowed_feats_; // in case we want to take the top N ngrams, etc.
+  map<pair<int, int> , int> conj_cache_;
 };
 
 NgramDetector::NgramDetector(const string& param) {
-  string filename, mapfile, featname;
+  string filename;
   bool explicit_markers = false;
   unsigned order = 3;
-  ParseArgs(param, &explicit_markers, &order);
-  pimpl_ = new NgramDetectorImpl(explicit_markers, order);
+  string ngram_file;
+  ParseArgs(param, &explicit_markers, &order, &ngram_file);
+  pimpl_ = new NgramDetectorImpl(explicit_markers, order, ngram_file);
   SetStateSize(pimpl_->ReserveStateSize());
 }
 
@@ -374,3 +440,6 @@ void NgramDetector::FinalTraversalFeatures(const void* ant_state,
   pimpl_->FinalTraversal(ant_state, features);
 }
 
+void NgramDetector::PrepareForInput(const SentenceMetadata& smeta) {
+  pimpl_->PrepareForInput(smeta);
+}
