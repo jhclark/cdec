@@ -7,6 +7,13 @@ from xml.sax.saxutils import escape
 
 graPrefix = sys.argv[1]
 
+# Second argument can be a file with observable sentence-level features,
+# one set of features per line (parallel with source sentences). Features are space-delimited indicator features.
+obsFeatsFile = None
+if len(sys.argv) == 3:
+  obsFeatsFilename = sys.argv[2]
+  obsFeatsFile = open(obsFeatsFilename)
+
 sys.stdin = codecs.getreader("utf-8")(sys.stdin)
 sys.stdout = codecs.getwriter("utf-8")(sys.stdout)
 
@@ -21,5 +28,10 @@ for line in sys.stdin:
     else:
       filename = filenameGz
     
-  print '<seg id="%d" grammar="%s"> '%(i,filename) + escape(line.strip()) + " </seg>"
+  if obsFeatsFile:
+    obsFeats = obsFeatsFile.next().strip()
+    print '<seg id="%d" feats="%s" grammar="%s"> '%(i,obsFeats,filename) + escape(line.strip()) + " </seg>"
+  else:
+    print '<seg id="%d" grammar="%s"> '%(i,filename) + escape(line.strip()) + " </seg>"
   i+=1
+
