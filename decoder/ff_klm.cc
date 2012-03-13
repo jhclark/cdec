@@ -9,6 +9,7 @@
 #include "stringlib.h"
 #include "hg.h"
 #include "tdict.h"
+#include "sentence_metadata.h"
 #include "lm/model.hh"
 #include "lm/enumerate_vocab.hh"
 
@@ -212,6 +213,28 @@ class KLanguageModelImpl {
       return word2class_map_[w];
   }
 
+  void PrepareForInput(const SentenceMetadata& smeta) {
+    obs_prob_feats_.clear();
+    obs_oov_feats_.clear();
+
+    // get the space-delimited list of features    
+    string value = smeta.GetSGMLValue("features");
+    vector<string> feats;
+    Tokenize(value, ' ', &feats);
+    cerr << "Found " << feats.size() << " SGML observable features: " << value << endl;
+    for(int i=0; i<feats.size(); ++i) {
+      string conj_feat = feats.at(i) + "_" + FD::Convert(fid_);
+      int conj_fid = FD::Convert(conj_feat);
+      obs_prob_feats_.push_back(conj_fid);
+
+      if(oov_fid_) {
+        string conj_oov_feat = feats.at(i) + "_" + FD::Convert(oov_fid_);
+        int conj_oov_fid = FD::Convert(conj_oov_feat);
+        obs_oov_feats_.push_back(conj_oov_fid);
+      }
+    }
+  }
+ 
   // converts to cdec word id's to KenLM's id space, OOVs and <unk> end up at 0
   lm::WordIndex MapWord(WordID w) const {
     if (w >= cdec2klm_map_.size())
@@ -221,10 +244,12 @@ class KLanguageModelImpl {
   }
 
  public:
-  KLanguageModelImpl(const string& filename, const string& mapfile, bool explicit_markers) :
+  KLanguageModelImpl(const string& filename, const string& mapfile, bool explicit_markers, int fid, int oov_fid) :
       kCDEC_UNK(TD::Convert("<unk>")) ,
       kCDEC_SOS(TD::Convert("<s>")) ,
-      add_sos_eos_(!explicit_markers) {
+      add_sos_eos_(!explicit_markers),
+      fid_(fid),
+      oov_fid_(oov_fid) {
     {
       VMapper vm(&cdec2klm_map_);
       lm::ngram::Config conf;
@@ -281,6 +306,19 @@ class KLanguageModelImpl {
     word2class_map_[word] = cls;
   }
 
+  void FireFeatures(double log_prob, int oovs, SparseVector<double>* features) const {
+    features->set_value(fid_, log_prob);
+    for(int i=0; i<obs_prob_feats_.size(); ++i) {
+      features->set_value(obs_prob_feats_.at(i), log_prob); // set conjunctions with observable features
+    }
+    if (oovs && oov_fid_) {
+      features->set_value(oov_fid_, oovs);
+      for(int i=0; i<obs_oov_feats_.size(); ++i) {
+        features->set_value(obs_oov_feats_.at(i), oovs); // set conjunctions with observable features
+      }
+    }
+  }
+
   ~KLanguageModelImpl() {
     delete ngram_;
   }
@@ -302,6 +340,11 @@ class KLanguageModelImpl {
   int order_;
   vector<lm::WordIndex> cdec2klm_map_;
   vector<WordID> word2class_map_;        // if this is a class-based LM, this is the word->class mapping
+
+  int fid_;
+  int oov_fid_;
+  vector<int> obs_prob_feats_; // observable features conjoined with LM log prob
+  vector<int> obs_oov_feats_; // observable features conjoined with LM oovs
 };
 
 template <class Model>
@@ -311,14 +354,14 @@ KLanguageModel<Model>::KLanguageModel(const string& param) {
   if (!ParseLMArgs(param, &filename, &mapfile, &explicit_markers, &featname)) {
     abort();
   }
+  fid_ = FD::Convert(featname);
+  oov_fid_ = FD::Convert(featname+"_OOV");
   try {
-    pimpl_ = new KLanguageModelImpl<Model>(filename, mapfile, explicit_markers);
+    pimpl_ = new KLanguageModelImpl<Model>(filename, mapfile, explicit_markers, fid_, oov_fid_);
   } catch (std::exception &e) {
     std::cerr << e.what() << std::endl;
     abort();
   }
-  fid_ = FD::Convert(featname);
-  oov_fid_ = FD::Convert(featname+"_OOV");
   // cerr << "FID: " << oov_fid_ << endl;
   SetStateSize(pimpl_->ReserveStateSize());
 }
@@ -340,11 +383,14 @@ void KLanguageModel<Model>::TraversalFeaturesImpl(const SentenceMetadata& /* sme
                                           SparseVector<double>* features,
                                           SparseVector<double>* estimated_features,
                                           void* state) const {
-  double est = 0;
   double oovs = 0;
-  features->set_value(fid_, pimpl_->LookupWords(*edge.rule_, ant_states, &oovs, state));
-  if (oovs && oov_fid_)
-    features->set_value(oov_fid_, oovs);
+  double log_prob = pimpl_->LookupWords(*edge.rule_, ant_states, &oovs, state);
+  pimpl_->FireFeatures(log_prob, oovs, features);
+}
+
+template <class Model>
+void KLanguageModel<Model>::PrepareForInput(const SentenceMetadata& smeta) {
+  pimpl_->PrepareForInput(smeta);
 }
 
 template <class Model>
@@ -352,9 +398,7 @@ void KLanguageModel<Model>::FinalTraversalFeatures(const void* ant_state,
                                            SparseVector<double>* features) const {
   double oovs = 0;
   double lm = pimpl_->FinalTraversalCost(ant_state, &oovs);
-  features->set_value(fid_, lm);
-  if (oov_fid_ && oovs)
-    features->set_value(oov_fid_, oovs);
+  pimpl_->FireFeatures(lm, oovs, features);
 }
 
 template <class Model> boost::shared_ptr<FeatureFunction> CreateModel(const std::string &param) {

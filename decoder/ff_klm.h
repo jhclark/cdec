@@ -28,6 +28,8 @@ class KLanguageModel : public FeatureFunction {
                                      SparseVector<double>* features,
                                      SparseVector<double>* estimated_features,
                                      void* out_context) const;
+  virtual void PrepareForInput(const SentenceMetadata& smeta);
+
  private:
   int fid_; // conceptually const; mutable only to simplify constructor
   int oov_fid_; // will be zero if extra OOV feature is not configured by decoder
