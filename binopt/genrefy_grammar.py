@@ -9,9 +9,9 @@ graFiles = [file.strip() for file in sys.stdin]
 
 def sentIdFromGra(filename):
   if filename.endswith('.gz'):
-    return int(x.split('.')[-2])
+    return int(filename.split('.')[-2])
   else:
-    return int(x.split('.')[-1])
+    return int(filename.split('.')[-1])
   
 # Now sort gra files by their numeric extension
 graFiles = sorted(graFiles, key=sentIdFromGra)
