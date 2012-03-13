@@ -22,9 +22,9 @@ if len(graFiles) != len(genres):
 
 def zopen(filename, mode='r'):
   if filename.endswith('.gz'):
-    return open(filename, mode)
-  else:
     return gzip.open(filename, mode)
+  else:
+    return open(filename, mode)
 
 for (graFileIn, genre) in zip(graFiles, genres):
   graFileOut = "{}/{}".format(graDirOut, os.path.basename(graFileIn))
