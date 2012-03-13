@@ -7,8 +7,14 @@ import gzip
 genres = [genre.strip() for genre in open(genreFile)]
 graFiles = [file.strip() for file in sys.stdin]
 
+def sentIdFromGra(filename):
+  if filename.endswith('.gz'):
+    return int(x.split('.')[-2])
+  else:
+    return int(x.split('.')[-1])
+  
 # Now sort gra files by their numeric extension
-graFiles = sorted(graFiles, key=lambda x: int(x.split('.')[-1]))
+graFiles = sorted(graFiles, key=sentIdFromGra)
 
 if len(graFiles) != len(genres):
   print >>sys.stderr, 'ERROR: Mismatch: Got {} grammars and {} genres'.format(len(graFiles), len(genres))
