@@ -30,7 +30,7 @@ for line in sys.stdin:
     
   if obsFeatsFile:
     obsFeats = obsFeatsFile.next().strip()
-    print '<seg id="%d" feats="%s" grammar="%s"> '%(i,obsFeats,filename) + escape(line.strip()) + " </seg>"
+    print '<seg id="%d" features="%s" grammar="%s"> '%(i,obsFeats,filename) + escape(line.strip()) + " </seg>"
   else:
     print '<seg id="%d" grammar="%s"> '%(i,filename) + escape(line.strip()) + " </seg>"
   i+=1
