@@ -5,7 +5,7 @@ featNames = [ line.strip() for line in open(sys.argv[1]) if not line.startswith(
 
 for line in sys.stdin:
   try:
-    (lhs, src, tgt, feats, align) = line.strip().split(' ||| ')
+    (lhs, src, tgt, feats, align) = line.strip("\n").split(' ||| ')
   except:
     print >>sys.stderr, 'WARNING: No alignments:', line
     try:

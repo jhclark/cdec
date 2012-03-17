@@ -38,7 +38,7 @@ else:
     sys.exit(1)
 
 for line in sys.stdin:
-    (lhs, src, tgt, feats, align) = line.strip().split(' ||| ')
+    (lhs, src, tgt, feats, align) = line.strip("\n").split(' ||| ')
     featList = [x.split('=') for x in feats.split()]
     feats = []
     for (f, val) in featList:

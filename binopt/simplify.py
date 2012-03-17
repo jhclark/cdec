@@ -5,7 +5,7 @@ import math
 modes = sys.argv[1:]
 
 for line in sys.stdin:
-  (lhs, src, tgt, feats, align) = line.strip().split(' ||| ')
+  (lhs, src, tgt, feats, align) = line.strip("\n").split(' ||| ')
   featList = [x.split('=') for x in feats.split()]
   f = 0
   ef = 0

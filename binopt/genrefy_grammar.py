@@ -32,7 +32,7 @@ for (graFileIn, genre) in zip(graFiles, genres):
   with zopen(graFileIn) as graIn:
     with zopen(graFileOut, 'w') as graOut:
       for line in graIn:
-        (lhs, src, tgt, feats, align) = line.strip().split(' ||| ')
+        (lhs, src, tgt, feats, align) = line.strip("\n").split(' ||| ')
         featList = feats.split()
         allFeats = list(featList)
         for featPair in featList:
