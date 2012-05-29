@@ -175,6 +175,8 @@ env.Program(target='dpmert/mr_dpmert_generate_mapper_input', source=comb('dpmert
 env.Program(target='dpmert/mr_dpmert_map', source=comb('dpmert/mr_dpmert_map.cc', srcs))
 env.Program(target='dpmert/mr_dpmert_reduce', source=comb('dpmert/mr_dpmert_reduce.cc', srcs))
 
+env.Program(target='utils/atools', source=comb('utils/atools.cc', srcs))
+
 # Decision tree stuffs
 #env.Program(target='dtree/dtree', source=comb('dtree/dtree.cc', srcs))
 #env.Program(target='dtree/extract_topbest', source=comb('dtree/extract_topbest.cc', srcs))
