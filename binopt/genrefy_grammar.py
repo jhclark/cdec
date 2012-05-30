@@ -3,9 +3,15 @@ import sys
 import os.path
 import gzip
 
+def zopen(filename, mode='r'):
+  if filename.endswith('.gz'):
+    return gzip.open(filename, mode)
+  else:
+    return open(filename, mode)
+
 (genreFile, graDirOut) = sys.argv[1:]
-genres = [genre.strip() for genre in open(genreFile)]
-graFiles = [file.strip() for file in sys.stdin]
+genres = [ genre.strip() for genre in zopen(genreFile) ]
+graFiles = [ file.strip() for file in sys.stdin ]
 
 def sentIdFromGra(filename):
   if filename.endswith('.gz'):
@@ -19,12 +25,6 @@ graFiles = sorted(graFiles, key=sentIdFromGra)
 if len(graFiles) != len(genres):
   print >>sys.stderr, 'ERROR: Mismatch: Got {} grammars and {} genres'.format(len(graFiles), len(genres))
   sys.exit(1)
-
-def zopen(filename, mode='r'):
-  if filename.endswith('.gz'):
-    return gzip.open(filename, mode)
-  else:
-    return open(filename, mode)
 
 for (graFileIn, genre) in zip(graFiles, genres):
   graFileOut = "{}/{}".format(graDirOut, os.path.basename(graFileIn))
