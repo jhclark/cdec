@@ -12,10 +12,13 @@ filenames = sys.argv[1:]
 files = [ zopen(f) for f in filenames ]
 
 # TODO: Err on non-parallel files?
-while True:
-  for f in files:
-    lineArr = [ f.next().strip() for f in files ]
-    print '\t'.join(lineArr)
+try:
+  while True:
+    for f in files:
+      lineArr = [ f.next().strip() for f in files ]
+      print '\t'.join(lineArr)
+  except StopIteration:
+    pass
 
 for f in files:
   f.close()
