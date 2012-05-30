@@ -17,8 +17,8 @@ try:
     for f in files:
       lineArr = [ f.next().strip() for f in files ]
       print '\t'.join(lineArr)
-  except StopIteration:
-    pass
+except StopIteration:
+  pass
 
 for f in files:
   f.close()
