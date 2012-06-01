@@ -24,6 +24,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
   opts.add_options()
         ("weights,w", po::value<string>(), "Weights from previous iteration (used as initialization and interpolation")
         ("regularization_strength,C",po::value<double>()->default_value(500.0), "l2 regularization strength")
+        ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer)")
         ("regularize_to_weights,y",po::value<double>()->default_value(5000.0), "Differences in learned weights to previous weights are penalized with an l2 penalty with this strength; 0.0 = no effect")
         ("memory_buffers,m",po::value<unsigned>()->default_value(100), "Number of memory buffers (LBFGS)")
         ("min_reg,r",po::value<double>()->default_value(0.01), "When tuning (-T) regularization strength, minimum regularization strenght")
@@ -96,10 +97,13 @@ void GradAdd(const SparseVector<weight_t>& v, const double scale, vector<weight_
   }
 }
 
+// C is the regularization constant
+// feat_reg are feature-level regularization weights
 double ApplyRegularizationTerms(const double C,
                                 const double T,
                                 const vector<weight_t>& weights,
                                 const vector<weight_t>& prev_weights,
+				const vector<weight_t>& feat_reg,
                                 vector<weight_t>* g) {
   assert(weights.size() == g->size());
   double reg = 0;
@@ -107,8 +111,8 @@ double ApplyRegularizationTerms(const double C,
     const double prev_w_i = (i < prev_weights.size() ? prev_weights[i] : 0.0);
     const double& w_i = weights[i];
     double& g_i = (*g)[i];
-    reg += C * w_i * w_i;
-    g_i += 2 * C * w_i;
+    reg += (C + feat_reg[i]) * w_i * w_i;
+    g_i += 2 * (C + feat_reg[i]) * w_i;
 
     const double diff_i = w_i - prev_w_i;
     reg += T * diff_i * diff_i;
@@ -160,6 +164,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
                        const double T,
                        const unsigned memory_buffers,
                        const vector<weight_t>& prev_x,
+		       const vector<weight_t>& feat_reg,
                        vector<weight_t>* px) {
   vector<weight_t>& x = *px;
   vector<weight_t> vg(FD::NumFeats(), 0.0);
@@ -181,7 +186,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
     }
 
     // handle regularizer
-    double reg = ApplyRegularizationTerms(C, T, x, prev_x, &vg);
+    double reg = ApplyRegularizationTerms(C, T, x, prev_x, feat_reg, &vg);
     cll += reg;
     cerr << cll << " (REG=" << reg << ")\tPPL=" << ppl << "\t TEST_PPL=" << tppl << "\t" << endl;
     try {
@@ -217,6 +222,7 @@ int main(int argc, char** argv) {
     cerr << "--tune_regularizer requires --testset to be set\n";
     return 1;
   }
+
   const double min_reg = conf["min_reg"].as<double>();
   const double max_reg = conf["max_reg"].as<double>();
   double C = conf["regularization_strength"].as<double>(); // will be overridden if parameter is tuned
@@ -225,6 +231,7 @@ int main(int argc, char** argv) {
   assert(min_reg > 0.0);
   assert(max_reg > 0.0);
   assert(max_reg > min_reg);
+
   const double psi = conf["interpolate_with_weights"].as<double>();
   if (psi < 0.0 || psi > 1.0) { cerr << "Invalid interpolation weight: " << psi << endl; return 1; }
   ReadCorpus(&cin, &training);
@@ -233,6 +240,14 @@ int main(int argc, char** argv) {
     ReadCorpus(rf.stream(), &testing);
   }
   cerr << "Number of features: " << FD::NumFeats() << endl;
+
+  // read additional per feature regularization weights
+  // NOTE: Must do this *after* reading the corpus!
+  vector<weight_t> feat_reg;
+  if (conf.count("regularization_file")) {
+    Weights::InitFromFile(conf["regularization_file"].as<string>(), &feat_reg);
+  }
+  feat_reg.resize(FD::NumFeats());
 
   vector<weight_t> x, prev_x;  // x[0] is bias
   if (conf.count("weights")) {
@@ -256,7 +271,7 @@ int main(int argc, char** argv) {
     cerr << "SWEEP FACTOR: " << sweep_factor << endl;
     while(C < max_reg) {
       cerr << "C=" << C << "\tT=" <<T << endl;
-      tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x, &x);
+      tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x, feat_reg, &x);
       sp.push_back(make_pair(C, tppl));
       C *= sweep_factor;
     }
@@ -279,7 +294,7 @@ int main(int argc, char** argv) {
     }
     C = sp[best_i].first;
   }  // tune regularizer
-  tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x, &x);
+  tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x, feat_reg, &x);
   if (conf.count("weights")) {
     for (int i = 1; i < x.size(); ++i) {
       x[i] = (x[i] * psi) + prev_x[i] * (1.0 - psi);

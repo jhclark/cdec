@@ -9,7 +9,7 @@ def zopen(filename, mode='r'):
   else:
     return open(filename, mode)
 
-(genreFile, graDirOut) = sys.argv[1:]
+(genreFile, graDirOut, conjunctionManifest) = sys.argv[1:]
 genres = [ genre.strip() for genre in zopen(genreFile) ]
 graFiles = [ file.strip() for file in sys.stdin ]
 
@@ -26,6 +26,7 @@ if len(graFiles) != len(genres):
   print >>sys.stderr, 'ERROR: Mismatch: Got {} grammars and {} genres'.format(len(graFiles), len(genres))
   sys.exit(1)
 
+conjunctions = set()
 for (graFileIn, genre) in zip(graFiles, genres):
   graFileOut = "{}/{}".format(graDirOut, os.path.basename(graFileIn))
   print >>sys.stderr, "Writing {}".format(graFileOut)
@@ -37,6 +38,13 @@ for (graFileIn, genre) in zip(graFiles, genres):
         allFeats = list(featList)
         for featPair in featList:
           (name, value) = featPair.split('=')
-          allFeats.append("%s_%s=%s"%(name, genre, value))
+          conjoinedName = "%s_%s"%(name, genre)
+          allFeats.append("%s=%s"%(conjoinedName, value))
+          conjunctions.add(conjoinedName)
         feats = ' '.join(allFeats)
         print >>graOut, ' ||| '.join([lhs, src, tgt, feats, align])
+
+f = open(conjunctionManifest, 'w')
+f.write('\n'.join(conjunctions))
+f.write('\n')
+f.close()

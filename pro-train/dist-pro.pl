@@ -74,6 +74,7 @@ my $uniq_feats_file;
 my $tune_regularizer = 0;
 my $reg = 500;
 my $reg_previous = 5000;
+my $feat_reg_file = "";
 
 # Process command-line options
 Getopt::Long::Configure("no_auto_abbrev");
@@ -89,6 +90,7 @@ if (GetOptions(
         "weights=s" => \$initial_weights,
 	"tune-regularizer" => \$tune_regularizer,
 	"reg=f" => \$reg,
+      	"feat-reg-file=s" => \$feat_reg_file,
 	"reg-previous=f" => \$reg_previous,
 	"use-make=i" => \$use_make,
 	"max-iterations=i" => \$max_iterations,
@@ -442,9 +444,12 @@ while (1){
 	print STDERR unchecked_output("date");
 	$cmd="cat @dev_outs | $REDUCER -w $dir/weights.$im1 -C $reg -y $reg_previous --interpolate_with_weights $psi";
 	if ($tune_regularizer) {
-		$cmd .= " -T -t $dev_test_file";
+	   $cmd .= " -T -t $dev_test_file";
 	}
-	if($do_binning) {
+        if ($feat_reg_file) {
+            $cmd .= " -F $feat_reg_file";
+        }
+	if ($do_binning) {
 	    $cmd .= " > $dir/weights.opt.$iteration";
 	} else {
 	    $cmd .= " > $dir/weights.$iteration";
