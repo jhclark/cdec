@@ -4,6 +4,13 @@ import codecs
 import os
 import os.path
 from xml.sax.saxutils import escape
+import gzip
+
+def zopen(filename, mode='r'):
+  if filename.endswith('.gz'):
+    return gzip.open(filename, mode)
+  else:
+    return open(filename, mode)
 
 graPrefix = sys.argv[1]
 
@@ -12,7 +19,7 @@ graPrefix = sys.argv[1]
 obsFeatsFile = None
 if len(sys.argv) == 3:
   obsFeatsFilename = sys.argv[2]
-  obsFeatsFile = open(obsFeatsFilename)
+  obsFeatsFile = zopen(obsFeatsFilename)
 
 sys.stdin = codecs.getreader("utf-8")(sys.stdin)
 sys.stdout = codecs.getwriter("utf-8")(sys.stdout)
