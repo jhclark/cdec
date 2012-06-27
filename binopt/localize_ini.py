@@ -8,7 +8,7 @@ localDir = sys.argv[1]
 
 files = dict()
 
-pat = re.compile(r'/[a-zA-Z0-9./_-]+')
+pat = re.compile(r'/[a-zA-Z0-9./_+-]+')
 
 # 1) Find paths in the INI that need localizing
 #    and print out new ini
