@@ -6,8 +6,9 @@ binmode(STDIN, ":utf8");
 binmode(STDOUT, ":utf8");
 
 while(<STDIN>) {
+  chomp;
   my $line = $_;
   $line =~ s/ \+[^ ]+//g; # for example: word +suffix
   $line =~ s/[^ ]+\# //g; # for example: prefix# word
-  print $line;
+  print "$line\n";
 }
