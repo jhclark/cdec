@@ -7,7 +7,7 @@ import collection._
 import io._
 import annotation._
 
-val DEBUG = true
+val DEBUG = false
 val maxBins = args(0).toInt
 
 // Note: We give each rule equal weight since they are the basic unit
