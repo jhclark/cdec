@@ -4,11 +4,21 @@ import math
 
 modes = sys.argv[1:]
 
+def die(msg):
+  print >>sys.stderr, msg
+  sys.exit(1)
+
 for mode in modes:
   if mode == 'unlog':
     print >>sys.stderr, "Reversing log transforms..."
-  elif mode == 'simple':
+  elif mode == 'no_phrasal':
+    print >>sys.stderr, "Removing phrasal translation feature..."
+  elif mode == 'phrasal_only':
     print >>sys.stderr, "Keeping only the phrasal translation feature..."
+    if len(modes) > 1: die("phrasal_only is not compatible with other options")
+  elif mode == 'counts_only':
+    print >>sys.stderr, "Keeping only the count features..."
+    if len(modes) > 1: die("phrasal_only is not compatible with other options")
   else:
     print >>sys.stderr, "ERROR: Unrecognized mode:", mode
     sys.exit(1)
@@ -33,9 +43,12 @@ for line in sys.stdin:
   # MaxLexFGivenE
   result = []
   for (name, value) in featList:
-    if 'simple' in modes:
-      if name != "EGivenFCoherent":
+    if 'phrasal_only' in modes and name != "EGivenFCoherent":
         continue
+    if 'counts_only' in modes and name != 'SampleCountF' and name != 'CountEF':
+        continue
+    if 'no_phrasal' in modes and name == 'EGivenFCoherent':
+      continue
 
     if name == 'MaxLexEGivenF' or name == 'MaxLexFGivenE' or name == 'EGivenFCoherent':
       result.append( (name, unlog(value) ) )
