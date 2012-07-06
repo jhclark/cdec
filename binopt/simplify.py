@@ -4,24 +4,42 @@ import math
 
 modes = sys.argv[1:]
 
+for mode in modes:
+  if mode == 'unlog':
+    print >>sys.stderr, "Reversing log transforms..."
+  elif mode == 'simple':
+    print >>sys.stderr, "Keeping only the phrasal translation feature..."
+  else:
+    print >>sys.stderr, "ERROR: Unrecognized mode:", mode
+    sys.exit(1)
+
+# sa-extract uses -math.log10(prob) and floors at 99
+# note: reads and returns strings
+def unlog(value):
+  if 'unlog' in modes:
+    value = float(value)
+    if value >= 99:
+      return '0.0'
+    else:
+      return str(math.pow(10,-value))
+
 for line in sys.stdin:
   (lhs, src, tgt, feats, align) = line.strip("\n").split(' ||| ')
   featList = [x.split('=') for x in feats.split()]
-  f = 0
-  ef = 0
-  for name, val in featList:
-      if name == 'SampleCountF':
-          f = float(val)
-      elif name == 'CountEF':
-          ef = float(val)    
-  tgs = ef / f
-  
-  featList = []
-  for mode in modes:
-    if mode == 'prob':
-      featList.append('PTGS=%.6f'%tgs)
-    elif mode == 'log':
-      lp = -math.log10(tgs)
-      featList.append('LogPTGS=%.6f'%lp)
-  feats = ' '.join(featList)
+
+  # Remove log transform from all sa-align features:
+  # MaxLexEGivenF
+  # EGivenFCoherent: -log10(PairCount / SampleCount) (sa-extract/context_model.py:100)
+  # MaxLexFGivenE
+  result = []
+  for (name, value) in featList:
+    if 'simple' in modes:
+      if name != "EGivenFCoherent":
+        continue
+
+    if name == 'MaxLexEGivenF' or name == 'MaxLexFGivenE' or name == 'EGivenFCoherent':
+      result.append( (name, unlog(value) ) )
+    else:
+      result.append( (name, value) )
+  feats = ' '.join(result)
   print ' ||| '.join([lhs, src, tgt, feats, align])
