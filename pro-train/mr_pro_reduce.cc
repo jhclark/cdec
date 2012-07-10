@@ -3,6 +3,7 @@
 #include <iostream>
 #include <fstream>
 #include <vector>
+#include <algorithm>
 
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
@@ -11,6 +12,7 @@
 #include "weights.h"
 #include "sparse_vector.h"
 #include "optimize.h"
+#include "verbose.h"
 
 using namespace std;
 namespace po = boost::program_options;
@@ -24,7 +26,9 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
   opts.add_options()
         ("weights,w", po::value<string>(), "Weights from previous iteration (used as initialization and interpolation")
         ("regularization_strength,C",po::value<double>()->default_value(500.0), "l2 regularization strength")
-        ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer)")
+        ("graph_regularization_strength,G",po::value<double>()->default_value(500.0), "l2 regularization strength for graph regularizer")
+        ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C)")
+        ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer, but not weighted by C)")
         ("regularize_to_weights,y",po::value<double>()->default_value(5000.0), "Differences in learned weights to previous weights are penalized with an l2 penalty with this strength; 0.0 = no effect")
         ("memory_buffers,m",po::value<unsigned>()->default_value(100), "Number of memory buffers (LBFGS)")
         ("min_reg,r",po::value<double>()->default_value(0.01), "When tuning (-T) regularization strength, minimum regularization strenght")
@@ -104,16 +108,33 @@ double ApplyRegularizationTerms(const double C,
                                 const vector<weight_t>& weights,
                                 const vector<weight_t>& prev_weights,
 				const vector<weight_t>& feat_reg,
+                                const double graph_reg_C,
+                                const vector<vector<weight_t> >& graph_reg_matrix,
                                 vector<weight_t>* g) {
   assert(weights.size() == g->size());
   double reg = 0;
   for (size_t i = 0; i < weights.size(); ++i) {
     const double prev_w_i = (i < prev_weights.size() ? prev_weights[i] : 0.0);
-    const double& w_i = weights[i];
+    const double& w_i = weights.at(i);
     double& g_i = (*g)[i];
-    reg += (C + feat_reg[i]) * w_i * w_i;
-    g_i += 2 * (C + feat_reg[i]) * w_i;
+    reg += (C + feat_reg.at(i)) * w_i * w_i;
+    g_i += 2 * (C + feat_reg.at(i)) * w_i;
 
+    // TODO: REVIEW THIS
+    // Note: We don't enforce that columns sum to 1, even though it's a good idea
+    // Note: We don't need an |abs| in the gradient since the regularization graph is directed
+
+    // apply graph regularization (e.g. neighbor regularization)
+    if (graph_reg_C != 0.0) {
+      double diff_i_J = w_i;
+      for (int j=0; j<weights.size(); j++) {
+        diff_i_J -= graph_reg_matrix.at(i).at(j) * weights.at(j);
+      }
+      reg += graph_reg_C * diff_i_J * diff_i_J;
+      g_i += 2 * graph_reg_C * diff_i_J;
+    }
+
+    // regularize to the previous iteration's weights
     const double diff_i = w_i - prev_w_i;
     reg += T * diff_i * diff_i;
     g_i += 2 * T * diff_i;
@@ -165,6 +186,8 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
                        const unsigned memory_buffers,
                        const vector<weight_t>& prev_x,
 		       const vector<weight_t>& feat_reg,
+                       const double graph_reg_C,
+                       const vector<vector<weight_t> >& graph_reg_matrix,
                        vector<weight_t>* px) {
   vector<weight_t>& x = *px;
   vector<weight_t> vg(FD::NumFeats(), 0.0);
@@ -186,7 +209,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
     }
 
     // handle regularizer
-    double reg = ApplyRegularizationTerms(C, T, x, prev_x, feat_reg, &vg);
+    double reg = ApplyRegularizationTerms(C, T, x, prev_x, feat_reg, graph_reg_C, graph_reg_matrix, &vg);
     cll += reg;
     cerr << cll << " (REG=" << reg << ")\tPPL=" << ppl << "\t TEST_PPL=" << tppl << "\t" << endl;
     try {
@@ -211,6 +234,98 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
   }
   return tppl;
 }
+
+// reads a "feature matrix" file with lines like:
+// Feat1 Feat2 weight
+// this is used for reading the precision matrix in graph regularization
+// note: this code is ripped off from Weights::InitFromFile, but contains some non-trivial changes
+void ReadFeatMatrix(const string& filename,
+                    vector<vector<weight_t> >* pweights) {
+
+  vector<vector<weight_t> >& weights = *pweights;
+  if (!SILENT) cerr << "Reading feature matrix from " << filename << endl;
+  ReadFile in_file(filename);
+  istream& in = *in_file.stream();
+  assert(in);
+  
+  int weight_count = 0;
+  bool fl = false;
+  string buf;
+  size_t max_feat = max<size_t>(weights.size(), FD::NumFeats());
+  while (in) {
+
+    getline(in, buf);
+    if (buf.size() == 0) continue;
+    if (buf[0] == '#') continue;
+    if (buf[0] == ' ') {
+      cerr << "Weight matrix file lines may not start with whitespace.\n" << buf << endl;
+      abort();
+    }
+    // = becomes space
+    for (int i = buf.size() - 1; i > 0; --i)
+      if (buf[i] == '=' || buf[i] == '\t') { buf[i] = ' '; break; }
+
+    // read the first feature
+    int start1 = 0;
+    while(start1 < buf.size() && buf[start1] == ' ') ++start1; // this appears to do nothing (see error condition above)
+    int end1 = 0;
+    while(end1 < buf.size() && buf[end1] != ' ') ++end1;
+    const int fid1 = FD::Convert(buf.substr(start1, end1 - start1));
+
+    // read the second feature
+    int start2 = end1;
+    while(start2 < buf.size() && buf[start2] == ' ') ++start2;
+    int end2 = start2;
+    while(end2 < buf.size() && buf[end2] != ' ') ++end2;
+    const int fid2 = FD::Convert(buf.substr(start2, end2 - start2));
+
+    // read the weight
+    int weight_begin = end2;
+    while(weight_begin < buf.size() && buf[weight_begin] == ' ') ++weight_begin;
+    weight_t val = strtod(&buf.c_str()[weight_begin], NULL);
+    if (isnan(val)) {
+      cerr << FD::Convert(fid1) << " has weight NaN!\n";
+      abort();
+    }
+
+    if (weights.size() <= fid1) {
+      weights.resize(fid1 + 1);
+    }
+    if (weights[fid1].size() <= fid2) {
+      weights[fid1].resize(fid2 + 1);
+    }
+    max_feat = max<size_t>(max_feat, fid1);
+    max_feat = max<size_t>(max_feat, fid2);
+
+    weights[fid1][fid2] = val;
+    ++weight_count;
+    if (!SILENT) {
+      if (weight_count %   50000 == 0) { cerr << '.' << flush; fl = true; }
+      if (weight_count % 2000000 == 0) { cerr << " [" << weight_count << "]\n"; fl = false; }
+    }
+  }
+
+  if (!SILENT) {
+    if (fl) { cerr << endl; }
+    cerr << "Loaded " << weight_count << " feature pair weights\n";
+  }
+}
+
+void ResizeMatrix(const size_t size, vector<vector<weight_t> >* pweights) {
+  vector<vector<weight_t> >& weights = *pweights;
+
+  // make the entire matrix square
+  if (weights.size() < size) {
+    weights.resize(size);
+  }
+  for (int i=0; i < weights.size(); ++i) {
+    if (weights[i].size() < size) {
+      weights[i].resize(size);
+    }
+  }
+  cerr << "Feature matrix dimensions are" << weights.size() << " x " << weights[0].size() << endl;
+}
+
 
 int main(int argc, char** argv) {
   po::variables_map conf;
@@ -239,7 +354,7 @@ int main(int argc, char** argv) {
     ReadFile rf(conf["testset"].as<string>());
     ReadCorpus(rf.stream(), &testing);
   }
-  cerr << "Number of features: " << FD::NumFeats() << endl;
+  cerr << "Number of features in corpus: " << FD::NumFeats() << endl;
 
   // read additional per feature regularization weights
   // NOTE: Must do this *after* reading the corpus!
@@ -247,7 +362,20 @@ int main(int argc, char** argv) {
   if (conf.count("regularization_file")) {
     Weights::InitFromFile(conf["regularization_file"].as<string>(), &feat_reg);
   }
-  feat_reg.resize(FD::NumFeats());
+
+  double graph_reg_C = conf["graph_regularization_strength"].as<double>(); // will be overridden if parameter is tuned
+
+  // read additional feature pair regularization weights for graph regularization
+  // pre-size the 2D vector at num_feats by num_feats
+  // NOTE: Must do this *after* reading the corpus!
+  vector<vector<weight_t> > graph_reg_matrix(FD::NumFeats(), vector<weight_t>(FD::NumFeats()));
+  if (conf.count("graph_regularization_file")) {
+    ReadFeatMatrix(conf["graph_regularization_file"].as<string>(), &graph_reg_matrix);
+    //cerr << "Read feature matrix:" << endl;
+    //    for (int i=0; i < graph_reg_matrix.size(); ++i)
+    //      for (int j=0; j < graph_reg_matrix[i].size(); ++j)
+    //        cerr << "FeatMatrix: " << FD::Convert(i) << " " << FD::Convert(j) << " " << graph_reg_matrix[i][j] << endl;
+  }
 
   vector<weight_t> x, prev_x;  // x[0] is bias
   if (conf.count("weights")) {
@@ -261,6 +389,11 @@ int main(int argc, char** argv) {
   cerr << "         Number of features: " << x.size() << endl;
   cerr << "Number of training examples: " << training.size() << endl;
   cerr << "Number of  testing examples: " << testing.size() << endl;
+
+  // make sure new regularizers have consistent dimensions
+  feat_reg.resize(FD::NumFeats());
+  ResizeMatrix(FD::NumFeats(), &graph_reg_matrix);
+
   double tppl = 0.0;
   vector<pair<double,double> > sp;
   vector<double> smoothed;
@@ -271,7 +404,8 @@ int main(int argc, char** argv) {
     cerr << "SWEEP FACTOR: " << sweep_factor << endl;
     while(C < max_reg) {
       cerr << "C=" << C << "\tT=" <<T << endl;
-      tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x, feat_reg, &x);
+      tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
+                             feat_reg, graph_reg_C, graph_reg_matrix, &x);
       sp.push_back(make_pair(C, tppl));
       C *= sweep_factor;
     }
@@ -294,7 +428,8 @@ int main(int argc, char** argv) {
     }
     C = sp[best_i].first;
   }  // tune regularizer
-  tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x, feat_reg, &x);
+  tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
+                         feat_reg, graph_reg_C, graph_reg_matrix, &x);
   if (conf.count("weights")) {
     for (int i = 1; i < x.size(); ++i) {
       x[i] = (x[i] * psi) + prev_x[i] * (1.0 - psi);
