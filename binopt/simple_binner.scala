@@ -1,5 +1,5 @@
 #!/bin/sh
-exec scala -nowarn "$0" "$@"
+exec scala -nowarn -nocompdaemon "$0" "$@"
 !#
 
 import System._
@@ -35,11 +35,29 @@ class FeatInfo(val name: String, val value: Float, val origCount: Int, val adjCo
   override def toString() = "%s %f %d [adj=%d]".format(name, value, origCount, adjCount)
 }
 
-class Bin(val contents: Seq[FeatInfo], val overlap: Int) {
+class Bin(val contents: Seq[FeatInfo], val overlap: Int,
+          // values to be used when generalizing to new data -- filled in by generalizeBins()
+          val effectiveVals: Option[(Float,Float)] = None) {
   assert(contents.size > 0, "contents are empty")
   val name: String = contents.head.name
+
   val beginVal: Float = contents.head.value
   val endVal: Float = contents.last.value
+
+  effectiveVals match {
+    case Some( (begin, end) ) => {
+      assert(begin <= end, "Invalid effective vals. Wanted begin %f <= end %f".format(begin, end))
+      assert(begin <= beginVal, "Invalid effective vals. Wanted begin %f <= beginVal %f".format(begin, beginVal))
+      assert(end >= endVal, "Invalid effective vals. Wanted end %f >= endVal %f".format(end, endVal))
+    }
+    case None => ;
+  }
+
+  lazy val condition: Option[String] = effectiveVals match {
+    case Some( (begin, end) ) => Some("%f <= x < %f".format(begin, end))
+    case None => None
+  }
+
   val origCount: Int = contents.map(_.origCount).sum
   val adjCount: Int = contents.map(_.adjCount).sum
   override def toString() = {
@@ -189,6 +207,27 @@ def dedupe(seq: Seq[Int]): Seq[Int] = {
   result
 }
 
+// generalize bin boundaries by expanding them to touch neighboring bins
+def generalizeBins(bins: Seq[Bin]): Seq[Bin] = {
+  bins.zipWithIndex.map { case (bin: Bin, i: Int) =>
+    assert(bin.overlap == 0)
+    val isFirstBin = i == 0
+    val isLastBin = i == (bins.size - 1)
+    if (isFirstBin && isLastBin) {
+      new Bin(bin.contents, bin.overlap, Some(Float.NegativeInfinity, Float.PositiveInfinity))
+    } else if (isLastBin) {
+      new Bin(bin.contents, bin.overlap, Some(bin.beginVal, Float.PositiveInfinity))
+    } else {
+      val nextBeginVal = bins(i+1).beginVal
+      if (isFirstBin) {
+        new Bin(bin.contents, bin.overlap, Some(Float.NegativeInfinity, nextBeginVal))
+      } else {
+        new Bin(bin.contents, bin.overlap, Some(bin.beginVal, nextBeginVal))
+      }
+    }
+  }
+}
+
 def makeOverlaps(bins: Seq[Bin], overlaps: Seq[Int]): Seq[Bin] = {
   // if an overlap request is greater than the number of bins,
   // round it down to cover all the bins
@@ -209,7 +248,8 @@ def makeOverlaps(bins: Seq[Bin], overlaps: Seq[Int]): Seq[Bin] = {
     } else {
       bins.sliding(i+1).map { window: Seq[Bin] =>
         val combinedContents: Seq[FeatInfo] = window.map(_.contents).flatten
-        new Bin(combinedContents, overlap=i)
+        val effectiveVals: Option[(Float, Float)] = Some( (window.head.effectiveVals.get._1, window.last.effectiveVals.get._2) )
+        new Bin(combinedContents, overlap=i, effectiveVals)
       }
     }
   }
@@ -217,26 +257,11 @@ def makeOverlaps(bins: Seq[Bin], overlaps: Seq[Int]): Seq[Bin] = {
 
 // Do this for each feature
 allFeatInfo.groupBy(_.name).foreach { case (name, list) =>
-  val binned: Seq[Bin] = makeOverlaps(induceBins(name, list), overlaps)
+  val binned: Seq[Bin] = makeOverlaps(
+                           generalizeBins(
+                             induceBins(name, list)), overlaps)
   assert(binned.size > 0, "zero bins?!")
-  binned.zipWithIndex.foreach { case (bin: Bin, i: Int) =>
-    // leave a comment about how these bins should be interpreted when generalizing to unseen test sets
-    val condition = {
-      val isFirstBin = i == 0
-      val isLastBin = i == (binned.size - 1)
-      if (isFirstBin && isLastBin) {
-        "-inf <= x < inf"
-      } else if (isLastBin) {
-        "%f <= x < inf".format(bin.beginVal)
-      } else {
-        val nextBeginVal = binned(i+1).beginVal
-        if (isFirstBin) {
-          "-inf <= x < %f".format(nextBeginVal)
-        } else {
-          "%f <= x < %f".format(bin.beginVal, nextBeginVal)
-        }
-      }
-    }
+  binned.foreach { bin: Bin =>
 
     @tailrec def formatRange(a: Float, b: Float, prec: Int = 0): String = {
       if (bin.beginVal == bin.endVal) {
@@ -269,7 +294,7 @@ allFeatInfo.groupBy(_.name).foreach { case (name, list) =>
         }
         "%s_%s%s".format(bin.name, range, overlapSpec)
       }
-      println("%s %s %s %s [ %s ]".format(operator, origFeatName, destFeatName, condition, bin.toString))
+      println("%s %s %s %s [ %s ]".format(operator, origFeatName, destFeatName, bin.condition.get, bin.toString))
     }
   }
   //println()
