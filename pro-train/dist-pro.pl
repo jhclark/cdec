@@ -75,6 +75,8 @@ my $tune_regularizer = 0;
 my $reg = 500;
 my $reg_previous = 5000;
 my $feat_reg_file = "";
+my $graph_reg_file = ""; # graph regularizers such as neighbor regularization
+my $graph_reg_strength = ""; # graph regularizers such as neighbor regularization
 
 # Process command-line options
 Getopt::Long::Configure("no_auto_abbrev");
@@ -91,6 +93,8 @@ if (GetOptions(
 	"tune-regularizer" => \$tune_regularizer,
 	"reg=f" => \$reg,
       	"feat-reg-file=s" => \$feat_reg_file,
+	"graph-reg-file=s" => \$graph_reg_file,
+        "graph-reg-strength=s" => \$graph_reg_strength,
 	"reg-previous=f" => \$reg_previous,
 	"use-make=i" => \$use_make,
 	"max-iterations=i" => \$max_iterations,
@@ -448,6 +452,12 @@ while (1){
 	}
         if ($feat_reg_file) {
             $cmd .= " -F $feat_reg_file";
+        }
+        if ($graph_reg_file) {
+            $cmd .= " -g $graph_reg_file";
+        }
+        if ($graph_reg_strength) {
+            $cmd .= " -G $graph_reg_strength";
         }
 	if ($do_binning) {
 	    $cmd .= " > $dir/weights.opt.$iteration";
