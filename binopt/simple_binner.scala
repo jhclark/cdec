@@ -1,5 +1,5 @@
 #!/bin/sh
-exec scala -nowarn -nocompdaemon "$0" "$@"
+exec scala -nowarn -nocompdaemon -savecompiled "$0" "$@"
 !#
 
 import System._
