@@ -1,4 +1,5 @@
 #!/bin/sh
+export JAVA_OPTS="-Xmx8g"
 exec scala -nowarn -nocompdaemon -savecompiled "$0" "$@"
 !#
 
@@ -9,6 +10,8 @@ import annotation._
 
 val DEBUG = false
 val maxBins = args(0).toInt
+
+println("Heap size: " + Runtime.getRuntime.maxMemory/1000/1000 + "MB")
 
 // comma-separated list of overlap modes
 // 0 means non-overlapping; otherwise, the number of bins to extend into
