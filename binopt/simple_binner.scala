@@ -9,6 +9,7 @@ import io._
 import annotation._
 
 val DEBUG = false
+val PROFILE = false
 val maxBins = args(0).toInt
 
 println("Heap size: " + Runtime.getRuntime.maxMemory/1000/1000 + "MB")
@@ -107,13 +108,24 @@ class Bin(val contents: Seq[FeatInfo], val overlap: Int,
   }
 }
 
+def time[A](task: String, alwaysShow: Boolean = false)(block: => A): A = {
+  val t0 = System.nanoTime
+  val result: A = block
+  val t1 = System.nanoTime
+  val timeMillis = (t1 - t0) / 1000 / 1000
+  if (PROFILE || alwaysShow) err.println("%s took %dms".format(task, timeMillis))
+  result
+}
+
 def induceBins(name: String, rawFeatInfo: Seq[FeatInfo]): Seq[Bin] = {
   if (DEBUG) err.println("Binning feature %s".format(name))
 
   // 1) Iteratively reduce the size of overly large bins such that they fill exactly one uniformly sized bin
   //    (this is the real magic)
   if (!DEBUG) err.print("%s: Adjusting bin sizes".format(name))
-  val (featInfo: Seq[FeatInfo], effectiveBinCount: Int) = adjust(rawFeatInfo)
+  val (featInfo: Seq[FeatInfo], effectiveBinCount: Int) = time("Adjusting bin sizes", alwaysShow=true) {
+    adjust(rawFeatInfo)
+  }
   if (!DEBUG) err.println()
 
   // 2) Form bins by adding data points until they're full
@@ -127,49 +139,67 @@ def induceBins(name: String, rawFeatInfo: Seq[FeatInfo]): Seq[Bin] = {
   var curCount = 0
   var desiredCount = 0
   var remainingItems: Seq[FeatInfo] = featInfo
-  if (!DEBUG) err.print("%s: Binning".format(name))
-  val bins: Seq[Bin] = for (i <- 0 until effectiveBinCount) yield {
-    desiredCount += uniformBinSize
+  if (!DEBUG) err.println("%s: Binning".format(name))
+  val bins: Seq[Bin] = time("Inducing bins", alwaysShow=true) {
+    for (i <- 0 until effectiveBinCount) yield {
+      time("Bin %d/%d".format(i+1, effectiveBinCount)) {
+        desiredCount += uniformBinSize
+        
+        if (DEBUG) err.println("Filling bin %d; desired (cumulative) count is %d; current count is %d".format(i, desiredCount, curCount))
+        val remainingBins = effectiveBinCount - i - 1
+        var countToAdd: Int = 0
+        var countRemaining: Int = remainingItems.size
+        def addItemToBin() {
+          val item = remainingItems(countToAdd)
+          countToAdd += 1
+          countRemaining -= 1
+          curCount += item.adjCount
+          if (DEBUG) err.println("Remaining items = %d; bins = %d".format(countRemaining, remainingBins))
+        }
+        
+        time("Finding boundary") {
+          while (countToAdd == 0 || 
+                 (countRemaining > 0 &&
+                  curCount + remainingItems(countToAdd).adjCount < desiredCount &&
+                  countRemaining > remainingBins)) {
+                 //var curCount = 0
+                 //while (curCount < uniformBinSize && remainingItems.size > remainingBins && remainingItems.size > 0) {
+            addItemToBin()
+          }
+        }
 
-    if (!DEBUG) {
-      err.print(".")
-      err.flush()
-    }
-
-    
-    if (DEBUG) err.println("Filling bin %d; desired (cumulative) count is %d; current count is %d".format(i, desiredCount, curCount))
-    val remainingBins = effectiveBinCount - i - 1
-    val bin = new mutable.ArrayBuffer[FeatInfo](100)
-    def addItemToBin() {
-      val item = remainingItems.head
-      remainingItems = remainingItems.drop(1)
-      bin += item
-      curCount += item.adjCount
-      if (DEBUG) err.println("Remaining items = %d; bins = %d".format(remainingItems.size, remainingBins))
-    }
-    while (bin.isEmpty || 
-           (!remainingItems.isEmpty && curCount + remainingItems.head.adjCount < desiredCount && remainingItems.size > remainingBins)) {
-      //var curCount = 0
-      //while (curCount < uniformBinSize && remainingItems.size > remainingBins && remainingItems.size > 0) {
-      addItemToBin()
-    }
-    // special case for items that will straddle bin boundaries:
-    // put it on whichever side of the boundary will cause it to violate the bin boundary *less*
-    // i.e. the excess should be less than 50%
-    if (!remainingItems.isEmpty && remainingItems.size > remainingBins) {
-      val nextItemCount = remainingItems.head.adjCount
-      val nextItemExcessCount: Int = (curCount + nextItemCount) - desiredCount
-      val nextItemExcessPct: Float = nextItemExcessCount.toFloat / nextItemCount.toFloat
-      if (DEBUG) err.println("Next item count: %d; excess count = %d (%f pct)".format(nextItemCount, nextItemExcessCount, nextItemExcessPct))
-      if (nextItemExcessPct < 0.5) {
-        addItemToBin()
+        // special case for items that will straddle bin boundaries:
+        // put it on whichever side of the boundary will cause it to violate the bin boundary *less*
+        // i.e. the excess should be less than 50%
+        if (countRemaining > 0 && countRemaining > remainingBins) {
+          val nextItemCount = remainingItems(countToAdd).adjCount
+          val nextItemExcessCount: Int = (curCount + nextItemCount) - desiredCount
+          val nextItemExcessPct: Float = nextItemExcessCount.toFloat / nextItemCount.toFloat
+          if (DEBUG) err.println("Next item count: %d; excess count = %d (%f pct)".format(nextItemCount, nextItemExcessCount, nextItemExcessPct))
+          if (nextItemExcessPct < 0.5) {
+            addItemToBin()
+          }
+        }
+        
+        val bin: Seq[FeatInfo] = time("Copying items") {
+          val result = remainingItems.take(countToAdd)
+          remainingItems = remainingItems.drop(countToAdd)
+          result
+        }
+        
+        if (remainingItems.isEmpty && bin.isEmpty) {
+          throw new RuntimeException("Ran out of elements")
+        }
+        
+        if (DEBUG || PROFILE) err.println("Completed bin %d/%d. curCount: %d; desiredCount: %d".format(i+1, effectiveBinCount, curCount, desiredCount))
+        //    if (!DEBUG) {
+        //      err.print("%d/%d ".format(i+1,effectiveBinCount))
+        //      err.flush()
+        //    }
+        
+        new Bin(bin, overlap=0)
       }
     }
-    if (remainingItems.isEmpty && bin.isEmpty) {
-      throw new RuntimeException("Ran out of elements")
-    }
-    if (DEBUG) err.println("Completed bin. curCount: %d; desiredCount: %d".format(curCount, desiredCount))
-    new Bin(bin, overlap=0)
   }
   if (!DEBUG) err.println()
 
@@ -183,16 +213,18 @@ err.println(" * Highest bin value in tuning data is shown in square brackets, bu
 
 // read the input from stdin (see above for format)
 err.println("Reading input from stdin...")
-val allFeatInfo: Seq[FeatInfo] = Source.stdin.getLines.toList.map { line =>
-  try {
-    val Array(f,v,c) = line.trim.split(" ")
-    new FeatInfo(f, v.toFloat, c.toInt, c.toInt)
-  } catch {
-    case e: Exception => {
-      err.println("ERROR: Could not parse line: " + line)
-      err.println("Exception: %s".format(e.getMessage))
-      System.exit(1)
-      throw e
+val allFeatInfo: Seq[FeatInfo] = time("Reading input", alwaysShow=true) { 
+  Source.stdin.getLines.toList.map { line =>
+    try {
+      val Array(f,v,c) = line.trim.split(" ")
+      new FeatInfo(f, v.toFloat, c.toInt, c.toInt)
+    } catch {
+      case e: Exception => {
+        err.println("ERROR: Could not parse line: " + line)
+        err.println("Exception: %s".format(e.getMessage))
+        System.exit(1)
+        throw e
+      }
     }
   }
 }
