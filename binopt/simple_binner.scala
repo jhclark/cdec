@@ -12,7 +12,7 @@ val DEBUG = false
 val PROFILE = false
 val maxBins = args(0).toInt
 
-println("Heap size: " + Runtime.getRuntime.maxMemory/1000/1000 + "MB")
+err.println("Heap size: " + Runtime.getRuntime.maxMemory/1000/1000 + "MB")
 
 // comma-separated list of overlap modes
 // 0 means non-overlapping; otherwise, the number of bins to extend into
