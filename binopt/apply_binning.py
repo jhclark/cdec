@@ -60,7 +60,7 @@ def find_lt(values, value):
       raise ValueError
 
 for line in sys.stdin:
-  print "XXX ",line,
+  #print "XXX ",line,
   (lhs, src, tgt, feats, align) = line.strip("\n").split(' ||| ')
   featList = [x.split('=') for x in feats.split()]
 
