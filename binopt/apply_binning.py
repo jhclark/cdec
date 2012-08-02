@@ -60,7 +60,7 @@ def find_lt(values, value):
       raise ValueError
 
 for line in sys.stdin:
-  #print "XXX ",line,
+  print "XXX ",line,
   (lhs, src, tgt, feats, align) = line.strip("\n").split(' ||| ')
   featList = [x.split('=') for x in feats.split()]
 
@@ -85,8 +85,8 @@ for line in sys.stdin:
       # *starting* at i and terminating early as soon as we exceed high_value
       found = 0
       for (lowValue, highValue, destFeatName) in my_bin_info[start_idx:]:
-        if lowValue < value:
-          if value <= highValue:
+        if lowValue <= value:
+          if value < highValue:
             destValue = "1" if useIndicators else strValue
             result.append(destFeatName + "=" + destValue)
             found += 1
