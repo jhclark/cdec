@@ -39,9 +39,13 @@ class FeatInfo(val name: String, val value: Float, val origCount: Int, val adjCo
   override def toString() = "%s %f %d [adj=%d]".format(name, value, origCount, adjCount)
 }
 
+// even though we store bins in a Seq, neighboring bins may not eventually be sequential
+// due to overlapping, etc.
+// so we store neighbors here
 class Bin(val contents: Seq[FeatInfo], val overlap: Int,
           // values to be used when generalizing to new data -- filled in by generalizeBins()
-          val effectiveVals: Option[(Float,Float)] = None) {
+          val effectiveVals: Option[(Float,Float)] = None,
+          val prevBin: Option[Bin] = None, val nextBin: Option[Bin] = None) {
   assert(contents.size > 0, "contents are empty")
   val name: String = contents.head.name
 
@@ -57,13 +61,29 @@ class Bin(val contents: Seq[FeatInfo], val overlap: Int,
     case None => ;
   }
 
+  // throws if effectiveVals is None
+  def effectiveBegin: Float = effectiveVals.get._1
+  def effectiveEnd: Float = effectiveVals.get._2
+
   lazy val condition: Option[String] = effectiveVals match {
-    case Some( (begin, end) ) => Some("%f <= x < %f".format(begin, end))
+    case Some( (begin, end) ) => {
+      val (strBegin, strEnd) = formatConditionRange(this)
+      Some("%s <= x < %s".format(strBegin, strEnd))
+    }
     case None => None
   }
 
   val origCount: Int = contents.map(_.origCount).sum
   val adjCount: Int = contents.map(_.adjCount).sum
+
+  def withEffectiveRange(begin: Float, end: Float): Bin = {
+    new Bin(contents, overlap, Some(begin, end), prevBin, nextBin)
+  }
+
+  def withNeighbors(prev: Option[Bin], next: Option[Bin]): Bin = {
+    new Bin(contents, overlap, effectiveVals, prev, next)
+  }
+
   override def toString() = {
     val range: String = if (contents.size == 1) "%f".format(beginVal) else "%f - %f".format(beginVal, endVal)
     "%s count=%d adjCount=%d L=%d R=%d".format(range, origCount, adjCount, contents.head.adjCount, contents.last.adjCount)
@@ -248,19 +268,34 @@ def generalizeBins(bins: Seq[Bin]): Seq[Bin] = {
     assert(bin.overlap == 0)
     val isFirstBin = i == 0
     val isLastBin = i == (bins.size - 1)
-    if (isFirstBin && isLastBin) {
-      new Bin(bin.contents, bin.overlap, Some(Float.NegativeInfinity, Float.PositiveInfinity))
-    } else if (isLastBin) {
-      new Bin(bin.contents, bin.overlap, Some(bin.beginVal, Float.PositiveInfinity))
+
+    val myBeginVal: Float = if (isFirstBin) {
+      Float.NegativeInfinity
     } else {
-      val nextBeginVal = bins(i+1).beginVal
-      if (isFirstBin) {
-        new Bin(bin.contents, bin.overlap, Some(Float.NegativeInfinity, nextBeginVal))
-      } else {
-        new Bin(bin.contents, bin.overlap, Some(bin.beginVal, nextBeginVal))
-      }
+      bin.beginVal
     }
+    val nextBeginVal: Float = if (isLastBin) {
+      Float.PositiveInfinity
+    } else {
+      bins(i+1).beginVal
+    }
+    bin.withEffectiveRange(myBeginVal, nextBeginVal)
   }
+}
+
+// inform bins about their neighbors' effective ranges
+// this allows us to serialize bins with appropriate precision
+// note: this has nothing to do with neighbor regularization
+//       it is for serialization only
+def propagateNeighbors(bins: Seq[Bin]): Seq[Bin] = {
+  bins.zipWithIndex.map { case (bin: Bin, i: Int) =>
+    assert(bin.overlap == 0)
+    val isFirstBin = i == 0
+    val isLastBin = i == (bins.size - 1)
+    val prevBin: Option[Bin] = if (isFirstBin) None else Some(bins(i-1))
+    val nextBin: Option[Bin] = if (isLastBin) None else Some(bins(i+1))
+    bin.withNeighbors(prevBin, nextBin)
+  }  
 }
 
 def makeOverlaps(bins: Seq[Bin], overlaps: Seq[Int]): Seq[Bin] = {
@@ -283,50 +318,70 @@ def makeOverlaps(bins: Seq[Bin], overlaps: Seq[Int]): Seq[Bin] = {
     } else {
       bins.sliding(i+1).map { window: Seq[Bin] =>
         val combinedContents: Seq[FeatInfo] = window.map(_.contents).flatten
-        val effectiveVals: Option[(Float, Float)] = Some( (window.head.effectiveVals.get._1, window.last.effectiveVals.get._2) )
-        new Bin(combinedContents, overlap=i, effectiveVals)
+        val effectiveVals: Option[(Float, Float)] = Some( (window.head.effectiveBegin, window.last.effectiveEnd) )
+        new Bin(combinedContents, overlap=i, effectiveVals=effectiveVals)
       }
     }
   }
 }
 
+// formats value with the minimal precision necessary to ensure that its string format
+// is not equivalent to either of its neighboring values
+@tailrec def formatRangeValue(prevOpt: Option[Float], value: Float, nextOpt: Option[Float], prec: Int = 0): String = {
+  val formatStr = "%."+prec+"f"
+  val strPrev = prevOpt match {
+    case None => ""
+    case Some(prev) => formatStr.format(prev)
+  }
+  val strValue = formatStr.format(value)
+  val strNext = nextOpt match {
+    case None => ""
+    case Some(next) => formatStr.format(next)
+  }
+  if (strPrev == strValue || strValue == strNext) {
+    if (prec > 100)
+      throw new RuntimeException("Really? You need precision > 100? That's probably a bug. ('%s','%s','%s')".format(strPrev, strValue, strNext))
+    formatRangeValue(prevOpt, value, nextOpt, prec+1)
+  } else {
+    strValue
+  }
+}
+
+def formatFeatureRange(bin: Bin): String = {
+  if (bin.beginVal == bin.endVal) {
+    formatRangeValue(bin.prevBin.map(_.effectiveBegin), bin.effectiveBegin, bin.nextBin.map(_.effectiveBegin))
+  } else {
+    val strLow = formatRangeValue(bin.prevBin.map(_.effectiveBegin), bin.effectiveBegin, bin.nextBin.map(_.effectiveBegin))
+    val strHigh = formatRangeValue(bin.prevBin.map(_.effectiveEnd), bin.effectiveEnd, bin.nextBin.map(_.effectiveEnd))
+    "%s_%s".format(strLow, strHigh)
+  }
+}
+
+def formatConditionRange(bin: Bin): (String, String) = {
+  val strLow = formatRangeValue(bin.prevBin.map(_.effectiveBegin), bin.effectiveBegin, bin.nextBin.map(_.effectiveBegin))
+  val strHigh = formatRangeValue(bin.prevBin.map(_.effectiveEnd), bin.effectiveEnd, bin.nextBin.map(_.effectiveEnd))
+  (strLow, strHigh)
+}
+
 // Do this for each feature
 allFeatInfo.groupBy(_.name).foreach { case (name, list) =>
   val binned: Seq[Bin] = makeOverlaps(
-                           generalizeBins(
-                             induceBins(name, list)), overlaps)
+                           propagateNeighbors(
+                             generalizeBins(
+                               induceBins(name, list))), overlaps)
   assert(binned.size > 0, "zero bins?!")
+
   binned.foreach { bin: Bin =>
-
-    @tailrec def formatRange(a: Float, b: Float, prec: Int = 0): String = {
-      if (bin.beginVal == bin.endVal) {
-        "%.1f".format(bin.beginVal)
-      } else {
-        val formatStr = "%."+prec+"f"
-        val begin = formatStr.format(bin.beginVal)
-        val end = formatStr.format(bin.endVal)
-        if (begin == end) {
-          formatRange(a, b, prec+1)
-        } else {
-          "%s_%s".format(begin, end)
-        }
-      }
-    }
-
     val origFeatName = bin.name
     if (plotFormat) {
-      val range = formatRange(bin.beginVal, bin.endVal)
+      val range: String = formatFeatureRange(bin)
       println("%s %s %d".format(origFeatName, range, bin.origCount))
     } else {
 
       val operator = "bin" // as opposed to "conjoin"
       val destFeatName = {
         val overlapSpec = "_Overlap%d".format(bin.overlap)
-        val range = if (bin.beginVal == bin.endVal) {
-          "%f".format(bin.beginVal)
-        } else {
-          "%f_%f".format(bin.beginVal, bin.endVal)
-        }
+        val range: String = formatFeatureRange(bin)
         "%s_%s%s".format(bin.name, range, overlapSpec)
       }
       println("%s %s %s %s [ %s ]".format(operator, origFeatName, destFeatName, bin.condition.get, bin.toString))
@@ -334,9 +389,3 @@ allFeatInfo.groupBy(_.name).foreach { case (name, list) =>
   }
   //println()
 }
-
-// TODO: Output overlap mode so that feature can be named properly during optimization
-// TODO: Now allow extending bins for overlap (multi-layer overlap?)
-// TODO: Allow bins to be specified in bits
-// TODO: Stump learners (keep values)
-// TODO: Be more intelligent at bin boundaries -- or make second pass if *really* necessary
