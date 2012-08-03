@@ -27,7 +27,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("weights,w", po::value<string>(), "Weights from previous iteration (used as initialization and interpolation")
         ("regularization_strength,C",po::value<double>()->default_value(500.0), "l2 regularization strength")
         ("graph_regularization_strength,G",po::value<double>()->default_value(500.0), "l2 regularization strength for graph regularizer")
-        ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C)")
+        ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C; this line means 'feat1 is penalized for being dissimilar from feat2 proportional to weight')")
         ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer, but not weighted by C)")
         ("regularize_to_weights,y",po::value<double>()->default_value(5000.0), "Differences in learned weights to previous weights are penalized with an l2 penalty with this strength; 0.0 = no effect")
         ("memory_buffers,m",po::value<unsigned>()->default_value(100), "Number of memory buffers (LBFGS)")
