@@ -32,7 +32,9 @@ def unlog(value):
     if value >= 99:
       return 0
     else:
-      return "%.20f"%math.pow(10,-value)
+      # We're only getting a couple of digits for lexical probabilities even with a precision of 20
+      # but that appears to be enough even when creating 1000 bins
+      return "%.30f"%math.pow(10,-value)
   else:
     return value
 
