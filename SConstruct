@@ -29,7 +29,8 @@ env = Environment(PREFIX=GetOption('prefix'),
                       CPPPATH = include,
                       LIBPATH = [],
                       LIBS = Split('boost_program_options boost_serialization boost_thread z'),
-		      CCFLAGS=Split('-g -DHAVE_SCONS'))
+                      LINKFLAGS = "--static",
+		      CCFLAGS=Split('-g -DHAVE_SCONS --static'))
 
 import os.path
 import shutil
