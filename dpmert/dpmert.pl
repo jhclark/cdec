@@ -619,7 +619,7 @@ Options:
 		After each iteration, rescale all feature weights such that feature-
 		name has a weight of 1.0.
 
-	--rand-directions <num>
+	--random-directions <num>
 		MERT will attempt to optimize along all of the principle directions,
 		set this parameter to explore other directions. Defaults to 5.
 
