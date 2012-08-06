@@ -188,6 +188,7 @@ gi/posterior-regularisation/prjava/lib/prjava-20100715.jar
 *.ps
 *.toc
 *~
+*#
 gi/pf/align-lexonly
 gi/pf/align-lexonly-pyp
 gi/pf/condnaive
