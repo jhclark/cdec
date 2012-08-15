@@ -19,8 +19,11 @@ import argparse
 
 parser = argparse.ArgumentParser(description='Add extra features such as High Frequency Word Counts')
 #parser.add_argument('srcHfwFile', metavar='N', type=int, nargs='+', help='Source high frequency words file')
-parser.add_argument('--lenFeats', help='Use length features', action='store_true')
+parser.add_argument('--srcTermFeats', help='Use source length features (number of terminals)', action='store_true')
+parser.add_argument('--tgtTermFeats', help='Use target length features (number of terminals)', action='store_true')
+
 parser.add_argument('--nontermFeats', help='Use non-terminal features', action='store_true')
+
 parser.add_argument('--srcHfwFile', help='Source high frequency words file')
 parser.add_argument('--tgtHfwFile', help='Target high frequency words file')
 parser.add_argument('--srcHfwCounts', help='Use source high frequency word count features using all words in the HFW words file (requires filename)', action='store_true')
@@ -68,9 +71,10 @@ for line in sys.stdin:
     srcTerms = [tok for tok in srcToks if not isNonterm(tok)]
     tgtTerms = [tok for tok in tgtToks if not isNonterm(tok)]
 
-    if args.lenFeats:
-        newFeatList.append("SrcWC_%d"%(len(srcTerms)))
-        newFeatList.append("TgtWC_%d"%(len(tgtTerms)))
+    if args.srcTermFeats:
+        newFeatList.append("SrcTermCount_%d"%(len(srcTerms)))
+    if args.tgtTermFeats:
+        newFeatList.append("TgtTermCount_%d"%(len(tgtTerms)))
 
     srcHfwCount = sum(tok in srcHfwCountSet and not isPunct(tok) for tok in srcTerms)
     tgtHfwCount = sum(tok in tgtHfwCountSet and not isPunct(tok) for tok in tgtTerms)
