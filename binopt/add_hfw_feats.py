@@ -39,15 +39,17 @@ sys.stdin = codecs.getreader('utf-8')(sys.stdin)
 sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 sys.stderr = codecs.getwriter('utf-8')(sys.stderr)
 
-srcHfwList = [line.strip() for line in codecs.open(args.srcHfwFile, 'r', 'utf-8')]
-tgtHfwList = [line.strip() for line in codecs.open(args.tgtHfwFile, 'r', 'utf-8')]
-# Use whole file for counts
-srcHfwCountSet = set(srcHfwList)
-tgtHfwCountSet = set(tgtHfwList)
-# Use subset for lexical features
-srcHfwLexSet = set(srcHfwList[:args.srcHfwLex])
-tgtHfwLexSet = set(tgtHfwList[:args.tgtHfwLex])
+if args.srcHfwFile:
+    srcHfwList = [line.strip() for line in codecs.open(args.srcHfwFile, 'r', 'utf-8')]
+    # Use whole file for counts
+    srcHfwCountSet = set(srcHfwList)
+    # Use subset for lexical features
+    srcHfwLexSet = set(srcHfwList[:args.srcHfwLex])
 
+if args.tgtHfwFile:
+    tgtHfwList = [line.strip() for line in codecs.open(args.tgtHfwFile, 'r', 'utf-8')]
+    tgtHfwCountSet = set(tgtHfwList)
+    tgtHfwLexSet = set(tgtHfwList[:args.tgtHfwLex])
 
 def isPunct(tok): return all([ unicodedata.category(c) == 'P' for c in tok])
 def isNonterm(tok): return len(tok) >= 3 and tok[0] == '[' and tok[-1] == ']'
@@ -76,11 +78,11 @@ for line in sys.stdin:
     if args.tgtTermFeats:
         newFeatList.append("TgtTermCount_%d"%(len(tgtTerms)))
 
-    srcHfwCount = sum(tok in srcHfwCountSet and not isPunct(tok) for tok in srcTerms)
-    tgtHfwCount = sum(tok in tgtHfwCountSet and not isPunct(tok) for tok in tgtTerms)
     if args.srcHfwCounts:
+        srcHfwCount = sum(tok in srcHfwCountSet and not isPunct(tok) for tok in srcTerms)
         if srcHfwCount > MIN: newFeatList.append("SrcHFWC_%d"%(srcHfwCount))
     if args.tgtHfwCounts:
+        tgtHfwCount = sum(tok in tgtHfwCountSet and not isPunct(tok) for tok in tgtTerms)
         if tgtHfwCount > MIN: newFeatList.append("TgtHFWC_%d"%(tgtHfwCount))
 
     srcPuncCount = sum(isPunct(tok) for tok in srcTerms)
