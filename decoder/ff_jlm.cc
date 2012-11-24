@@ -827,12 +827,11 @@ public:
 		    
 		    // cerr << "Firing feat " << FD::Convert(feat) << " for ngram " << ngram_buf << endl;
 		    
-		    // TODO: Disabling firing original feat?
-		    feats->set_value(cdec_feat, feat_value);
+		    feats->add_value(cdec_feat, feat_value);
 		    for(int j=0; j<feat_mappers_.size(); ++j) {
 		      const int fine_feat = feat_mappers_.at(j)->MapFeat(feat, ngram_buf, words_since_phrase_boundary);
                       const int cdec_fine_feat = GetID(fine_feat, jlm2fid_);
-		      feats->set_value(cdec_fine_feat, feat_value);
+		      feats->add_value(cdec_fine_feat, feat_value);
 		    }
 		  } else if(!ngram_context_buf.empty()) {
 		    // we can't backoff farther than a unigram
@@ -850,11 +849,11 @@ public:
 
 		      if(backoff_feat != -1) {
                         const int cdec_backoff_feat = GetID(backoff_feat, jlm2fid_);
-			feats->set_value(cdec_backoff_feat, backoff_value);
+			feats->add_value(cdec_backoff_feat, backoff_value);
 			for(int j=0; j<feat_mappers_.size(); ++j) {
 			  const int fine_backoff_feat = feat_mappers_.at(j)->MapFeat(backoff_feat, ngram_context_buf, words_since_phrase_boundary);
                           const int cdec_fine_backoff_feat = GetID(fine_backoff_feat, jlm2fid_);
-			  feats->set_value(cdec_fine_backoff_feat, backoff_value);
+			  feats->add_value(cdec_fine_backoff_feat, backoff_value);
 			}
 		      }
 		    }
@@ -877,7 +876,14 @@ public:
 			if(feat_vec_match != NULL) {
                           const int feat = feat_vec_match->match_feat;
                           const int cdec_feat = GetID(feat, jlm2fid_);
-                          feats->set_value(cdec_feat, 1);
+                          const float feat_value
+#ifdef JLM_REAL_VALUES		      
+                            = feat_vec_match->match_value;
+#else
+                          = 1;
+#endif
+
+                          feats->add_value(cdec_feat, feat_value);
 			}
 		}
 	}
