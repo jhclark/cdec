@@ -5,7 +5,11 @@ from collections import defaultdict
 from operator import itemgetter
 from bisect import *
 
-(bin_info_file, mode) = sys.argv[1:]
+(bin_info_file, mode) = sys.argv[1:3]
+
+def has_opt(flag): return flag in sys.argv[3:]
+
+keep_orig_feats = has_opt('--keep-orig-feats')
 
 def die(msg):
   print >>sys.stderr, msg
@@ -71,6 +75,10 @@ for line in sys.stdin:
   result = []
   for (name, strValue) in featList:
     value = float(strValue)
+    
+    if keep_orig_feats:
+      result.append(name + "=" + strValue)
+
     try:
       (my_bin_idx, my_bin_info) = all_bin_info[name]
 
