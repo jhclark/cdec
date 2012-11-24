@@ -10,6 +10,10 @@ from bisect import *
 def has_opt(flag): return flag in sys.argv[3:]
 
 keep_orig_feats = has_opt('--keep-orig-feats')
+# When discretizing only a subset of the features,
+# Allow passing through other features -- normally, this should
+# be disabled, since failing on unrecognized features can help detect buts
+allow_unrecognized_feats = has_opt('--allow-unrecognized-feats')
 
 def die(msg):
   print >>sys.stderr, msg
@@ -103,7 +107,8 @@ for line in sys.stdin:
           # REMEMBER: There could be overlapping bins!
           break
     except KeyError:
-      die("Unrecognized feature: " + name)
+      if not allow_unrecognized_feats:
+        die("Unrecognized feature: " + name)
     if found == 0:
       die("Found zero bins for feature: " + name)
   feats = ' '.join(result)
