@@ -34,7 +34,6 @@ parser.add_argument('--conjoin', type=int, help='Use conjunctions of length N (r
 
 args = parser.parse_args()
 
-
 sys.stdin = codecs.getreader('utf-8')(sys.stdin)
 sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 sys.stderr = codecs.getwriter('utf-8')(sys.stderr)
