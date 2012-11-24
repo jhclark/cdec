@@ -92,20 +92,69 @@ int main(int argc, char** argv) {
     entry.key = jlm::Hash(toks);
     order = max(order, (int) toks.size());
         
-    char* feat = strtok(feats, " ");
-    entry.match_feat = GetID(string(feat), all_feats); // ugh, copy
+    char* feat_and_value = strtok(feats, " ");
     if(strtok(NULL, " ") != NULL) {
-      cerr << "ERROR: JLM: Expeted only one feature" << endl;
+      cerr << "ERROR: JLM: Expected only one feature: " << feats << endl;
       abort();
     }
+
+#ifdef JLM_REAL_VALUES
+    char* feat = strtok(feat_and_value, "=");
+    char* match_value = strtok(NULL, "=");
+    if(match_value == NULL) {
+      cerr << "ERROR: JLM: Expected =value to follow feature: " << feat << endl;
+      abort();
+    }
+    if(strtok(NULL, " ") != NULL) {
+      cerr << "ERROR: JLM: Expected only feature and value delimited by =" << feat_and_value << endl;
+      abort();
+    }
+#else
+    char* feat = feat_and_value;
+    if(strtok(NULL, " ") != NULL) {
+      cerr << "ERROR: JLM: Expected only feature (not =value)" << endl;
+      abort();
+    }
+#endif
+
+    entry.match_feat = GetID(string(feat), all_feats); // ugh, copy
+
+#ifdef JLM_REAL_VALUES
+    entry.match_value = atof(match_value);
+#endif
     
+    // Now match backoff features
     if(backoff_feats != NULL) {
-      feat = strtok(backoff_feats, " ");
-      entry.miss_feat = GetID(string(feat), all_feats); // ugh, copy
+      feat_and_value = strtok(backoff_feats, " ");
       if(strtok(NULL, " ") != NULL) {
-        cerr << "ERROR: JLM: Expeted only one feature" << endl;
+        cerr << "ERROR: JLM: Expected only one feature" << endl;
         abort();
       }
+
+#ifdef JLM_REAL_VALUES
+    char* feat = strtok(feat_and_value, "=");
+    char* miss_value = strtok(NULL, "=");
+    if(miss_value == NULL) {
+      cerr << "ERROR: JLM: Expected =value to follow backoff feature" << endl;
+      abort();
+    }
+    if(strtok(NULL, " ") != NULL) {
+      cerr << "ERROR: JLM: Expected only backoff feature and value delimited by =" << endl;
+      abort();
+    }
+#else
+    char* feat = feat_and_value;
+    if(strtok(NULL, " ") != NULL) {
+      cerr << "ERROR: JLM: Expected only feature (not =value)" << endl;
+      abort();
+    }
+#endif
+
+      entry.miss_feat = GetID(string(feat), all_feats); // ugh, copy
+
+#ifdef JLM_REAL_VALUES
+      entry.miss_value = atof(miss_value);
+#endif
     } else {
       entry.miss_feat = -1;
     }

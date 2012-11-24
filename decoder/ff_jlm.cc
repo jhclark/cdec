@@ -37,6 +37,7 @@ static const unsigned char MASK = 7;
 static const WordID LEFT_MARKER = 0x80000000;
 static const WordID REMOVE_LEFT_MARKER = 0x7FFFFFFF;
 
+// see definitions in ff_jlm_hash.h
 typedef unsigned short conj_fid;
 typedef jlm::Table FeatMap;
 
@@ -52,7 +53,6 @@ void load_file_into_vec(const string& filename,
 			conjoin_with_feats->push_back(line);
 	}
 }
-
 // takes some set of features and maps it onto
 // a finer/more complex/more conjoined set of features
 // for now, we assume that we will do this individually (rather than in series)
@@ -67,6 +67,8 @@ public:
 		      const int words_since_phrase_boundary) = 0;
 };
 
+// maps coarser features to finer (conjoined) feature set
+// that includes phrase boundary information
 class PhraseBoundaryFeatureMapper : public FeatureMapper {
 
   virtual void SetSrc(const vector<WordID>& src) {}
@@ -100,6 +102,12 @@ private:
   vector<map<int, int> > feats_by_boundary_;
 };
 
+// maps coarser features to finer (conjoined) feature set
+// that includes anchor information (binary: is "anchor" or model is "guessing")
+// **for every word in the n-gram (including context words)**
+//
+// anchor-or-not is determined by a threshold based on lexical probability and count,
+// which is calculated over the entire source sentence globally
 class AnchorFeatureMapper : public FeatureMapper {
 public:
 	AnchorFeatureMapper(const string& f2eLexFile, const string& stopwordsFile,
@@ -204,6 +212,7 @@ private:
 		return cached_anchors_.at(tgt);
 	}
 
+  // pre-compute the feature names so that we aren't doing string mangling during LM lookups
   void BuildFeats(const string& prev_feat_name, const int prev_fid, const int iOrder) {
 	  // TODO: Recurse less times for features of lower orders...
 	  // Right now, we cache too many features, even though they'll never get used at runtime
@@ -392,6 +401,10 @@ bool ParseLMArgs(string const& in, string* filename, string* mapfile,
 				;
 				*min_link_count = boost::lexical_cast<int>(*i);
 				break;
+			case 'F'
+			  cerr << "Target frequency file not yet implemented" << endl;
+			  abort();
+			  break;
 #undef LMSPEC_NEXTARG
 			default:
 				fail: cerr << "Unknown JLanguageModel option " << s << " ; ";
@@ -644,11 +657,11 @@ public:
 							context_complete = true;
 					}
 					if (context_complete) {
-						//cerr << "Complete (in nonterm)" << endl;
-                                          FireLMFeats(features, ngram, words_since_phrase_boundary);
-						FireConjFeats(features, conj_fid_vec, false);
+                                          //cerr << "Complete (in nonterm)" << endl;
+                                          FireLMFeats(features, ngram, words_since_phrase_boundary, rule);
+                                          FireConjFeats(features, conj_fid_vec, false);
 					} else {
-                                          FireLMFeats(est_features, ngram, words_since_phrase_boundary);
+                                          FireLMFeats(est_features, ngram, words_since_phrase_boundary, rule);
 						if (remnant) {
 						  //cerr << "Storing (nonterm) Word "<<cur_word<<"in remnant at " << num_estimated << endl;
                                                   if(words_since_phrase_boundary == 0) {
@@ -717,7 +730,7 @@ public:
 				//cerr << "Ngram (term):" << ngram << endl;
 				if (context_complete) {
 					//cerr << "Complete (in term)" << endl;
-                                  FireLMFeats(features, ngram, words_since_phrase_boundary);
+                                  FireLMFeats(features, ngram, words_since_phrase_boundary, rule);
                                   FireConjFeats(features, conj_fid_vec, false);
 				} else {
 					if (remnant) {
@@ -732,7 +745,7 @@ public:
 					}
 					++num_estimated;
 					//cerr << "Est (in nonterm)" << endl;
-					FireLMFeats(est_features, ngram, words_since_phrase_boundary);
+					FireLMFeats(est_features, ngram, words_since_phrase_boundary, rule);
 					FireConjFeats(est_features, conj_fid_vec, true);
 				}
 				if(ngram.size() >= order_) {
@@ -767,9 +780,12 @@ public:
     return match->second;
   }
 
+  // rule is only used by child feature mappers
+  // usually, we already have enough information to compute the LM feats at this point
   void FireLMFeats(SparseVector<double>* feats,
-                          const vector<WordID>& ngram,
-                          const int words_since_phrase_boundary1) {
+                   const vector<WordID>& ngram,
+                   const int words_since_phrase_boundary1,
+                   const TRule& rule) {
     
     const int words_since_phrase_boundary = min(words_since_phrase_boundary1, order_);
 
@@ -802,14 +818,21 @@ public:
 
 		    const int feat = feat_vec_match->match_feat;
                     const int cdec_feat = GetID(feat, jlm2fid_);
+		    const float feat_value
+#ifdef JLM_REAL_VALUES		      
+		      = feat_vec_match->match_value;
+#else
+   		      = 1;
+#endif
+		    
 		    // cerr << "Firing feat " << FD::Convert(feat) << " for ngram " << ngram_buf << endl;
 		    
 		    // TODO: Disabling firing original feat?
-		    feats->set_value(cdec_feat, 1);
+		    feats->set_value(cdec_feat, feat_value);
 		    for(int j=0; j<feat_mappers_.size(); ++j) {
-		      const int fine_feat = feat_mappers_.at(j)->MapFeat(feat, ngram_buf, words_since_phrase_boundary);
+		      const int fine_feat = feat_mappers_.at(j)->MapFeat(feat, ngram_buf, words_since_phrase_boundary, rule);
                       const int cdec_fine_feat = GetID(fine_feat, jlm2fid_);
-		      feats->set_value(cdec_fine_feat, 1);
+		      feats->set_value(cdec_fine_feat, feat_value);
 		    }
 		  } else if(!ngram_context_buf.empty()) {
 		    // we can't backoff farther than a unigram
@@ -818,13 +841,20 @@ public:
 		    disc_feats_->Find(backoff_hash, backoff_feat_vec_match);
 		    if(backoff_feat_vec_match != NULL) {
 		      const int backoff_feat = backoff_feat_vec_match->miss_feat;
+		      const float backoff_value
+#ifdef JLM_REAL_VALUES		      
+		        = feat_vec_match->miss_value;
+#else
+   		        = 1;
+#endif
+
 		      if(backoff_feat != -1) {
                         const int cdec_backoff_feat = GetID(backoff_feat, jlm2fid_);
-			feats->set_value(cdec_backoff_feat, 1);
+			feats->set_value(cdec_backoff_feat, backoff_value);
 			for(int j=0; j<feat_mappers_.size(); ++j) {
-			  const int fine_backoff_feat = feat_mappers_.at(j)->MapFeat(backoff_feat, ngram_context_buf, words_since_phrase_boundary);
+			  const int fine_backoff_feat = feat_mappers_.at(j)->MapFeat(backoff_feat, ngram_context_buf, words_since_phrase_boundary, rule);
                           const int cdec_fine_backoff_feat = GetID(fine_backoff_feat, jlm2fid_);
-			  feats->set_value(cdec_fine_backoff_feat, 1);
+			  feats->set_value(cdec_fine_backoff_feat, backoff_value);
 			}
 		      }
 		    }
@@ -963,7 +993,7 @@ public:
 		state_size_ = (order_ - 1) * sizeof(WordID) // RemnantLM state
 			+ 2 // unscored_size and is_complete
 			+ (order_ - 1) * sizeof(WordID) // unscored_words: words that might participate in context in the future
-			+ (order_ - 1) * conj_vec_size_; // vectors (one per unscored word) of conjoined fids that receive this LM score
+                        + (order_ - 1) * conj_vec_size_; // vectors (one per unscored word) of conjoined fids that receive this LM score
 		unscored_size_offset_ = (order_ - 1) * sizeof(WordID);
 		is_complete_offset_ = unscored_size_offset_ + 1;
 		unscored_words_offset_ = is_complete_offset_ + 1;

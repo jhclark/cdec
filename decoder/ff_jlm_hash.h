@@ -5,6 +5,8 @@
 
 #include "murmur_hash.h"
 
+// supports JLM_REAL_VALUES macro to add in real-valued features instead of just indicators
+
 namespace jlm {
 
   struct Entry {
@@ -16,6 +18,10 @@ namespace jlm {
     Key key;
     int match_feat;
     int miss_feat;
+#ifdef JLM_REAL_VALUES
+    float match_value;
+    float miss_value;
+#endif
   };
 
 
