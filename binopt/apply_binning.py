@@ -109,7 +109,7 @@ for line in sys.stdin:
     except KeyError:
       if not allow_unrecognized_feats:
         die("Unrecognized feature: " + name)
-    if allow_unrecognized_feats and found == 0:
+    if not allow_unrecognized_feats and found == 0:
       die("Found zero bins for feature: " + name)
   feats = ' '.join(result)
   print ' ||| '.join([lhs, src, tgt, feats, align])
