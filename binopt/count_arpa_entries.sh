@@ -9,7 +9,7 @@ if [ ! -e $file ]; then
     exit 1
 fi
 
-count=$(zcat $file | awk -F' |=' '/^ngram/{n+=$3} /\\1-/{print n; exit 0}')
+count=$(zcat -f $file | awk -F' |=' '/^ngram/{n+=$3} /\\1-/{print n; exit 0}')
 if [[ $# == 2 && "$2" == "--add-unk" ]]; then
     count=$(($count + 1))
 fi
