@@ -6,4 +6,4 @@ set -ueo pipefail
 #
 # Uses STDIN/STDOUT
 
-awk -F$'\t' '/^-/{print $2"\tLanguageModel="$1"\tLanguageModel="$3}'
+awk -F$'\t' '/^-/{ if(NF==2) { print $2"\tLanguageModel="$1 } else { print $2"\tLanguageModel="$1"\tLanguageModel="$3 } }'
