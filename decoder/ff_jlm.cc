@@ -320,6 +320,115 @@ private:
   map<pair<int, bool>, int> feat_map_;
 };
 
+
+// Map features based on how frequent target words are
+class TargetFreqFeatureMapper : public FeatureMapper {
+public:
+	TargetFreqFeatureMapper(const string& freqFile) {
+		load_freqs(freqFile);
+	}
+
+private:
+	void load_freqs(const string& freqFile) {
+		ReadFile in_read(freqFile);
+		istream & in = *in_read.stream();
+		boost::char_separator<char> sep("\t");
+		string line;
+		while (getline(in, line)) {
+			if (!line.empty()) {
+				// note to eclipse CDT users: there is a direct correlation between
+				// using boost and the number of false positives on errors in CDT
+				boost::tokenizer<boost::char_separator<char> > tok(line, sep);
+				boost::tokenizer<boost::char_separator<char> >::iterator it = tok.begin();
+				WordID e = TD::Convert(*it);
+				++it;
+				// feature name (indicators only)
+				int feat_id = FD::Convert(*it);
+				++it;
+
+				freqs_[e] = feat_id;
+			}
+		}
+	}
+
+  // TODO: pre-compute the feature names so that we aren't doing string mangling during LM lookups
+  void BuildFeats(const string& prev_feat_name, const int prev_fid) {
+
+  }
+
+  // TODO ------------------------------
+  // very inefficiently gets the length of an ngram feature
+  // to make this more efficient, we would need to use more memory
+  // in the form of separate hash maps or encoding order info into each feat
+  int GetLength(const string& feat_name) {
+
+	  if(feat_name == "LM_UNK") {
+		  return 0;
+	  }
+
+	  size_t where = feat_name.find("_Len");
+	  if(where == string::npos) {
+		  cerr << "ERROR: Expected to find Len in LM feature name: " << feat_name << endl;
+		  abort();
+	  }
+	  // Assume order is <= 0 (i.e. is one digit)
+	  const string& str_len = feat_name.substr(where+4, 1);
+	  const int len = boost::lexical_cast<int>(str_len);
+	  return len;
+  }
+
+public:
+
+  // TODO ------------------------------
+  virtual void InitFeats(const set<int>& all_feats, int order) {
+    int prev_feat_count = FD::NumFeats();
+    for(set<int>::const_iterator it = all_feats.begin(); it != all_feats.end(); ++it) {
+      int fid = *it;
+      const string& feat_name = FD::Convert(fid);
+      // recursively build features for all orders
+      const int ngram_len = GetLength(feat_name);
+      BuildFeats(feat_name, fid);
+    }
+    int new_feat_count = FD::NumFeats() - prev_feat_count;
+    cerr << "JLM: Added " << new_feat_count << " anchor features" << endl;
+  }
+
+  // TODO ------------------------------
+  virtual int MapFeat(const int coarse_feat,
+		      const vector<WordID>& ngram,
+		      const int words_since_phrase_boundary /*unused*/) {
+
+    // Score each word in n-gram with confidence metric
+    // (could memoize this, but oh well)
+    // start with right-most word so that _Anchor0 indicates
+    // that we are confident of the word being predicted
+    // and _Anchor4 indicates that we are not confident
+    // of the oldest word in the history
+    int fid = coarse_feat;
+    for(int i=0; i<ngram.size(); ++i) {
+      /*
+      map<pair<int, bool>, int>::const_iterator it = feat_map_.find(pair<int, bool>(fid, is_confident));
+//      cerr << "Query feature anchor=" << is_confident << " from " << fid;
+      if(it == feat_map_.end()) {
+		cerr << "ERROR: For ngram "<<ngram<<" -- Could not map anchor feature " << FD::Convert(fid) << "; (fid=" << fid << ") for confidence=" << is_confident << "(wid=" << ngram.at(i) << "@"<<i<<") (pre-cached features are invalid)" << endl;
+		cerr << "WARNING: Assuming this is an (INFREQUENT!) hash collision and moving on";
+		break;
+//		abort();
+      }
+      fid = it->second;
+      */
+    }
+    return fid;
+  }
+
+private:
+  map<WordID, long> freqs_;
+  // conjoined feature IDs
+  map<pair<int, WordID>, int> feat_map_;
+};
+
+
+
 static const conj_fid END_OF_CONJ_VEC = 0;
 
 // -x : rules include <s> and </s>
@@ -550,7 +659,7 @@ private:
 		memcpy(dest, vec, conj_vec_size_);
 	}
 
-	inline void FireConjFeats(SparseVector<double>* features, const conj_fid* feats_to_fire, bool est) const {
+  inline void FireConjFeats(SparseVector<double>* features, const conj_fid* feats_to_fire, double value, bool est) const {
 		int i = 0;
 		if (features != NULL) {
 			for (const conj_fid* it = feats_to_fire;
@@ -558,7 +667,13 @@ private:
 					++it, ++i) {
 				int fid = *it;
 				///cerr << "Firing " << (est?"est":"feature") << " fid " << fid << ": " << value << endl;
-				features->set_value(fid, 1);
+                                const double feat_value =
+#ifdef JLM_REAL_VALUES
+                                  value;
+#else
+                                1;
+#endif
+				features->add_value(fid, feat_value);
 			}
 		} else {
 			//cerr << "NOTE: NULL features" << endl;
@@ -658,10 +773,10 @@ public:
 					}
 					if (context_complete) {
                                           //cerr << "Complete (in nonterm)" << endl;
-                                          FireLMFeats(features, ngram, words_since_phrase_boundary, rule);
-                                          FireConjFeats(features, conj_fid_vec, false);
+                                          double value = FireLMFeats(features, ngram, words_since_phrase_boundary, rule);
+                                          FireConjFeats(features, conj_fid_vec, value, false);
 					} else {
-                                          FireLMFeats(est_features, ngram, words_since_phrase_boundary, rule);
+                                          double value = FireLMFeats(est_features, ngram, words_since_phrase_boundary, rule);
 						if (remnant) {
 						  //cerr << "Storing (nonterm) Word "<<cur_word<<"in remnant at " << num_estimated << endl;
                                                   if(words_since_phrase_boundary == 0) {
@@ -674,7 +789,7 @@ public:
 						}
 						++num_estimated;
 						//cerr << "Est (in nonterm)" << endl;
-						FireConjFeats(est_features, conj_fid_vec, true);
+						FireConjFeats(est_features, conj_fid_vec, value, true);
 					}
 					if(ngram.size() >= order_) {
 						ngram.erase(ngram.begin(), ngram.begin()+1);
@@ -730,8 +845,8 @@ public:
 				//cerr << "Ngram (term):" << ngram << endl;
 				if (context_complete) {
 					//cerr << "Complete (in term)" << endl;
-                                  FireLMFeats(features, ngram, words_since_phrase_boundary, rule);
-                                  FireConjFeats(features, conj_fid_vec, false);
+                                  double value = FireLMFeats(features, ngram, words_since_phrase_boundary, rule);
+                                  FireConjFeats(features, conj_fid_vec, value, false);
 				} else {
 					if (remnant) {
                                           if(words_since_phrase_boundary == 0) {
@@ -745,8 +860,8 @@ public:
 					}
 					++num_estimated;
 					//cerr << "Est (in nonterm)" << endl;
-					FireLMFeats(est_features, ngram, words_since_phrase_boundary, rule);
-					FireConjFeats(est_features, conj_fid_vec, true);
+					double value = FireLMFeats(est_features, ngram, words_since_phrase_boundary, rule);
+					FireConjFeats(est_features, conj_fid_vec, value, true);
 				}
 				if(ngram.size() >= order_) {
 					ngram.erase(ngram.begin(), ngram.begin()+1);
@@ -782,7 +897,9 @@ public:
 
   // rule is only used by child feature mappers
   // usually, we already have enough information to compute the LM feats at this point
-  void FireLMFeats(SparseVector<double>* feats,
+  // now, we return the value from LM inference so that we can
+  // fire it for conjoined features, if using real values
+  double FireLMFeats(SparseVector<double>* feats,
                    const vector<WordID>& ngram,
                    const int words_since_phrase_boundary1,
                    const TRule& rule) {
@@ -808,6 +925,7 @@ public:
 		// drop right-most word (word being predicted)
 		ngram_context_buf.erase(ngram_context_buf.end()-1);
 
+                double result = 0.0;
 		for(int n=ngram.size()-1; n>=0; --n) {
 		  
 		  uint64_t hash = jlm::Hash(ngram_buf);
@@ -828,6 +946,7 @@ public:
 		    // cerr << "Firing feat " << FD::Convert(feat) << " for ngram " << ngram_buf << endl;
 		    
 		    feats->add_value(cdec_feat, feat_value);
+                    result += feat_value;
 		    for(int j=0; j<feat_mappers_.size(); ++j) {
 		      const int fine_feat = feat_mappers_.at(j)->MapFeat(feat, ngram_buf, words_since_phrase_boundary);
                       const int cdec_fine_feat = GetID(fine_feat, jlm2fid_);
@@ -842,7 +961,7 @@ public:
 		      const int backoff_feat = backoff_feat_vec_match->miss_feat;
 		      const float backoff_value
 #ifdef JLM_REAL_VALUES		      
-		        = feat_vec_match->miss_value;
+		        = backoff_feat_vec_match->miss_value;
 #else
    		        = 1;
 #endif
@@ -850,6 +969,7 @@ public:
 		      if(backoff_feat != -1) {
                         const int cdec_backoff_feat = GetID(backoff_feat, jlm2fid_);
 			feats->add_value(cdec_backoff_feat, backoff_value);
+                        result += backoff_value;
 			for(int j=0; j<feat_mappers_.size(); ++j) {
 			  const int fine_backoff_feat = feat_mappers_.at(j)->MapFeat(backoff_feat, ngram_context_buf, words_since_phrase_boundary);
                           const int cdec_fine_backoff_feat = GetID(fine_backoff_feat, jlm2fid_);
@@ -884,8 +1004,10 @@ public:
 #endif
 
                           feats->add_value(cdec_feat, feat_value);
+                          result += feat_value;
 			}
 		}
+                return result;
 	}
 
 	inline void SetConjoinedFeats(const TRule& rule, conj_fid* conj_fid_vec) {
