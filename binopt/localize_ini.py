@@ -22,9 +22,9 @@ for line in sys.stdin:
         print >>sys.stderr, "Found {} => {}".format(src, dest)
         line = line.replace(src, dest)
         # Special case for JLM meta file
-        (srcMeta, tgtMeta) = (src + ".meta", tgt + ".meta")
+        (srcMeta, destMeta) = (src + ".meta", dest + ".meta")
         if os.path.exists(srcMeta):
-            files[src] = dest
+            files[srcMeta] = destMeta
     print line,
 
 # 3) Copy files to local destination
