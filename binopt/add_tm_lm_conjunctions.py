@@ -50,7 +50,7 @@ for graFileIn in graFiles:
             
         conjunctions.add(lmTriggerFeat) # Save LM trigger feature to conjunction manifest
 
-        allFeats = ' '.join( otherFeats + (lmTriggerFeat,) )
+        allFeats = ' '.join( otherFeats + [lmTriggerFeat] )
         print >>graOut, ' ||| '.join([lhs, src, tgt, allFeats, align])
 
 f = open(conjunctionManifest, 'w')
