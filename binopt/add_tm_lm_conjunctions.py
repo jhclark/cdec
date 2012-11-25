@@ -46,11 +46,11 @@ for graFileIn in graFiles:
             components.append(name)
           else:
             otherFeats.append(featPair)
-        lmTriggerFeat = 'LM_Trigger__{}=1'.format('_'.join(components))
-            
+        lmTriggerFeat = 'LM_Trigger__{}'.format('_'.join(components))
         conjunctions.add(lmTriggerFeat) # Save LM trigger feature to conjunction manifest
+        lmTriggerFeatAndVal = '{}=1'.format(lmTriggerFeat)
 
-        allFeats = ' '.join( otherFeats + [lmTriggerFeat] )
+        allFeats = ' '.join( otherFeats + [lmTriggerFeatAndVal] )
         print >>graOut, ' ||| '.join([lhs, src, tgt, allFeats, align])
 
 f = open(conjunctionManifest, 'w')
