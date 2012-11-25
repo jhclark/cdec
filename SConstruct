@@ -30,7 +30,7 @@ env = Environment(PREFIX=GetOption('prefix'),
                       LIBPATH = [],
                       LIBS = Split('boost_program_options boost_serialization boost_thread z'),
                       LINKFLAGS = "--static",
-		      CCFLAGS=Split('-g -DHAVE_SCONS --static'))
+		      CCFLAGS=Split('-g -DHAVE_SCONS --static -DJLM_REAL_VALUES'))
 
 import os.path
 import shutil
