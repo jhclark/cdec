@@ -30,6 +30,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C; this line means 'feat1 is penalized for being dissimilar from feat2 proportional to weight')")
         ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer, but not weighted by C)")
         ("regularize_to_weights,y",po::value<double>()->default_value(5000.0), "Differences in learned weights to previous weights are penalized with an l2 penalty with this strength; 0.0 = no effect")
+        ("dominant_feat",po::value<string>(), "the name of a single feature, which *must* be present somewhere in at least one of the sampled exemplars, whose weight should guarantee that it always dominates all other features (i.e. that it is the primary sort criterion for hypotheses)")
         ("memory_buffers,m",po::value<unsigned>()->default_value(100), "Number of memory buffers (LBFGS)")
         ("min_reg,r",po::value<double>()->default_value(0.01), "When tuning (-T) regularization strength, minimum regularization strenght")
         ("max_reg,R",po::value<double>()->default_value(1e6), "When tuning (-T) regularization strength, maximum regularization strenght")
@@ -188,7 +189,9 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
 		       const vector<weight_t>& feat_reg,
                        const double graph_reg_C,
                        const vector<vector<weight_t> >& graph_reg_matrix,
+                       int dominant_feat_id,
                        vector<weight_t>* px) {
+
   vector<weight_t>& x = *px;
   vector<weight_t> vg(FD::NumFeats(), 0.0);
   bool converged = false;
@@ -215,14 +218,64 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
     try {
       // remove fixed parameters from gradient
       bool fixed_passthrough = false;
-      if(fixed_passthrough) {
+      if (fixed_passthrough) {
         cerr << "Fixing passthrough penalty" << endl;
         const int passthrough_fid = FD::Convert("PassThrough");
         vg[passthrough_fid] = 0.0;
       }
+      if (dominant_feat_id != -1) {
+        vg[dominant_feat_id] = 0.0;
+      }
 
       opt.Optimize(cll, vg, &x);
       converged = opt.HasConverged();
+
+      // Check if any feats are too close to dominant feat
+      // If so, rescale all features weights to be less than 100X
+      // NOTE: This is not guaranteed to make the feature dominant (but should be reasonable)
+      if (dominant_feat_id != -1) {
+        double second_biggest_weight = 0.0; // by magnitude
+        int second_biggest_id = 0;
+        for (size_t i = 1; i < x.size(); ++i) {
+          if (i != dominant_feat_id) {
+            double w = fabs(x.at(i));
+            if (w > second_biggest_weight) {
+              second_biggest_weight = w;
+              second_biggest_id = i;
+            }
+          }
+        }
+        const double dominant_weight = x.at(dominant_feat_id);
+        cerr << "Dominant feature weight after optimization: " << dominant_weight << endl;
+        cerr << "Desired next highest weight after optimization: " << second_biggest_weight << endl;
+
+        // if second biggest weight, isn't actually the second biggest weight, fix it.
+        const double MULTIPLIER = 100.0; // make dominant weight 100X any other weight
+        if (fabs(second_biggest_weight * MULTIPLIER) > dominant_weight) {
+
+          double scaling_factor = 1.0 / MULTIPLIER;
+          if (fabs(dominant_weight) < fabs(second_biggest_weight)) {
+            // divide something smaller by something larger to multiply in something < 1.0
+            scaling_factor *= fabs(dominant_weight) / fabs(second_biggest_weight);
+          }
+          cerr << "Rescaling all non-dominant features by: " << scaling_factor << endl;
+          assert(scaling_factor < 1.0);
+
+          for (size_t i = 1; i < x.size(); ++i) {
+            if (i != dominant_feat_id) {
+              cerr << "Feature " << i << ": " << FD::Convert(i) << ": " << x.at(i) << " => ";
+              x[i] *= scaling_factor;
+              cerr << x.at(i) << endl;
+              const double EPSILON = 0.000001;
+              if ( fabs(x.at(i) * MULTIPLIER) > fabs(dominant_weight) + EPSILON ) {
+                cerr << fabs(x.at(i) * MULTIPLIER) << " > " << (fabs(dominant_weight) + EPSILON) << endl;
+                assert( fabs(x.at(i) * MULTIPLIER) <= fabs(dominant_weight) + EPSILON);
+              }
+            }
+          }
+        }
+      }
+      
     } catch (...) {
       cerr << "Exception caught, assuming convergence is close enough...\n";
       converged = true;
@@ -347,6 +400,13 @@ int main(int argc, char** argv) {
   assert(max_reg > 0.0);
   assert(max_reg > min_reg);
 
+  int dominant_feat_id;
+  if (conf.count("dominant_feat")) {
+    dominant_feat_id = FD::Convert(conf["dominant_feat"].as<string>());
+  } else {
+    dominant_feat_id = -1;
+  }
+
   const double psi = conf["interpolate_with_weights"].as<double>();
   if (psi < 0.0 || psi > 1.0) { cerr << "Invalid interpolation weight: " << psi << endl; return 1; }
   ReadCorpus(&cin, &training);
@@ -405,7 +465,7 @@ int main(int argc, char** argv) {
     while(C < max_reg) {
       cerr << "C=" << C << "\tT=" <<T << endl;
       tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
-                             feat_reg, graph_reg_C, graph_reg_matrix, &x);
+                             feat_reg, graph_reg_C, graph_reg_matrix, dominant_feat_id, &x);
       sp.push_back(make_pair(C, tppl));
       C *= sweep_factor;
     }
@@ -429,7 +489,7 @@ int main(int argc, char** argv) {
     C = sp[best_i].first;
   }  // tune regularizer
   tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
-                         feat_reg, graph_reg_C, graph_reg_matrix, &x);
+                         feat_reg, graph_reg_C, graph_reg_matrix, dominant_feat_id, &x);
   if (conf.count("weights")) {
     for (int i = 1; i < x.size(); ++i) {
       x[i] = (x[i] * psi) + prev_x[i] * (1.0 - psi);
