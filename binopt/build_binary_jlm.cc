@@ -36,15 +36,16 @@ int GetID(const string& name, std::map<string,int>& m) {
 int main(int argc, char** argv) {
 
   if(argc != 4) {
-    cerr << "Usage: build_binary_jlm jlm_out num_entries load_factor < featlm > vocab_feats_order" << endl;
+    cerr << "Usage: build_binary_jlm jlm_out num_entries multiplier < featlm > vocab_feats_order" << endl;
+    cerr << "NOTE: 3rd argument is a space *multiplier* not a traditional 'load factor'" << endl;
     exit(1);
   }
 
   char* jlm_filename = argv[1];
   int num_elements = atoi(argv[2]);
-  float load_factor = atof(argv[3]);
+  float multiplier = atof(argv[3]);
 
-  size_t bytes = jlm::Table::Size(num_elements, load_factor);
+  size_t bytes = jlm::Table::Size(num_elements, multiplier);
   size_t mb = bytes / 1000 / 1000;
   cerr << "Building binary file of " << mb << "MB" << endl;
 
