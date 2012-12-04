@@ -17,9 +17,27 @@ graPrefix = sys.argv[1]
 # Second argument can be a file with observable sentence-level features,
 # one set of features per line (parallel with source sentences). Features are space-delimited indicator features.
 obsFeatsFile = None
-if len(sys.argv) == 3:
-  obsFeatsFilename = sys.argv[2]
+obsFeatsFilename = None
+lenFile = None
+lenFilename = None
+
+opts = sys.argv[3:]
+if not opts[0].startswith("--"):
+  raise Exception("Invalid option: {}".format(opts[0]))
+while i < len(opts):
+  opt = opts[i]
+  if opt == '--obsFeatsFile':
+    obsFeatsFilename = opts[i+1]
+  elif opt == '--lengthFile':
+    lenFilename = opts[i+1]
+  elif opt.startswith("--"):
+    raise Exception("Unknown option: {}".format(opt))
+  i += 1
+
+if obsFeatsFilename:
   obsFeatsFile = zopen(obsFeatsFilename)
+if lenFilename:
+  lenFile = zopen(lenFilename)
 
 sys.stdin = codecs.getreader("utf-8")(sys.stdin)
 sys.stdout = codecs.getwriter("utf-8")(sys.stdout)
@@ -34,11 +52,17 @@ for line in sys.stdin:
       sys.exit(1)
     else:
       filename = filenameGz
-    
+  
+  attribs = []
+  attribs.add('id="{}"'.format(i))
+  attribs.add('grammar="{}"'.format(filename))
   if obsFeatsFile:
     obsFeats = obsFeatsFile.next().strip()
-    print '<seg id="%d" features="%s" grammar="%s"> '%(i,obsFeats,filename) + escape(line.strip()) + " </seg>"
-  else:
-    print '<seg id="%d" grammar="%s"> '%(i,filename) + escape(line.strip()) + " </seg>"
+    attribs.add('features="{}"'.format(obsFeats))
+  if lenFile:
+    L = lenFile.next().strip()
+    attribs.add('desired_len="{}"'.format(L))
+    
+  print '<seg {}> '.format(' '.join(attribs)) + escape(line.strip()) + " </seg>"
   i+=1
 
