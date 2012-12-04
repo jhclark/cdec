@@ -20,6 +20,8 @@
 #include "ff_wordset.h"
 #include "ff_dwarf.h"
 
+#include "ff_length_hammer.h"
+
 #ifdef HAVE_GLC
 #include <cdec/ff_glc.h>
 #endif
@@ -71,6 +73,7 @@ void register_feature_functions() {
   ff_registry.Register("WordPairFeatures", new FFFactory<WordPairFeatures>);
   ff_registry.Register("WordSet", new FFFactory<WordSet>);
   ff_registry.Register("Dwarf", new FFFactory<Dwarf>);
+  ff_registry.Register("LengthHammer", new FFFactory<LengthHammer>);
 #ifdef HAVE_GLC
   ff_registry.Register("ContextCRF", new FFFactory<Model1Features>);
 #endif
