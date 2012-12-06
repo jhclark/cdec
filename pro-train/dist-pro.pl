@@ -77,6 +77,7 @@ my $reg_previous = 5000;
 my $feat_reg_file = "";
 my $graph_reg_file = ""; # graph regularizers such as neighbor regularization
 my $graph_reg_strength = ""; # graph regularizers such as neighbor regularization
+my $dominant_feat = ""; # the name of a single feature that should receive much greater weight than all other features (e.g. 100X)
 
 # Process command-line options
 Getopt::Long::Configure("no_auto_abbrev");
@@ -95,6 +96,7 @@ if (GetOptions(
       	"feat-reg-file=s" => \$feat_reg_file,
 	"graph-reg-file=s" => \$graph_reg_file,
         "graph-reg-strength=s" => \$graph_reg_strength,
+	"dominant-feat=s" => \$dominant_feat,
 	"reg-previous=f" => \$reg_previous,
 	"use-make=i" => \$use_make,
 	"max-iterations=i" => \$max_iterations,
@@ -458,6 +460,9 @@ while (1){
         }
         if ($graph_reg_strength) {
             $cmd .= " -G $graph_reg_strength";
+        }
+        if ($dominant_feat) {
+            $cmd .= " --dominant_feat $dominant_feat";
         }
 	if ($do_binning) {
 	    $cmd .= " > $dir/weights.opt.$iteration";
