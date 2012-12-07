@@ -59,14 +59,14 @@ for line in sys.stdin:
       filename = filenameGz
   
   attribs = []
-  attribs.add('id="{}"'.format(i))
-  attribs.add('grammar="{}"'.format(filename))
+  attribs.append('id="{}"'.format(i))
+  attribs.append('grammar="{}"'.format(filename))
   if obsFeatsFile:
     obsFeats = obsFeatsFile.next().strip()
-    attribs.add('features="{}"'.format(obsFeats))
+    attribs.append('features="{}"'.format(obsFeats))
   if lenFile:
     L = lenFile.next().strip()
-    attribs.add('desired_len="{}"'.format(L))
+    attribs.append('desired_len="{}"'.format(L))
     
   print '<seg {}> '.format(' '.join(attribs)) + escape(line.strip()) + " </seg>"
   i+=1
