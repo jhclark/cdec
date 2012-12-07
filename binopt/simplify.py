@@ -14,6 +14,8 @@ for mode in modes:
     print >>sys.stderr, "Reversing log transforms..."
   elif mode == 'no_phrasal':
     print >>sys.stderr, "Removing phrasal translation feature..."
+  elif mode == 'no_count_f':
+    print >>sys.stderr, "Removing SampleCountF feature..."
   elif mode == 'phrasal_only':
     print >>sys.stderr, "Keeping only the phrasal translation feature..."
     if len(majorModes) > 1: die("phrasal_only is not compatible with other major modes")
@@ -61,6 +63,8 @@ for line in sys.stdin:
     if 'counts_only' in modes and name != 'SampleCountF' and name != 'CountEF':
         continue
     if 'no_phrasal' in modes and name == 'EGivenFCoherent':
+      continue
+    if 'no_count_f' in modes and name == 'SampleCountF':
       continue
 
     if name == 'MaxLexEGivenF' or name == 'MaxLexFGivenE' or name == 'EGivenFCoherent':
