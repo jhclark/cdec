@@ -22,7 +22,7 @@ lenFile = None
 lenFilename = None
 
 opts = sys.argv[2:]
-if not opts[0].startswith("--"):
+if len(opts) > 0 and not opts[0].startswith("--"):
   raise Exception("Invalid option: {}".format(opts[0]))
 i = 0
 while i < len(opts):
