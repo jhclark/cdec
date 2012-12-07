@@ -27,9 +27,11 @@ if not opts[0].startswith("--"):
 while i < len(opts):
   opt = opts[i]
   if opt == '--obsFeatsFile':
-    obsFeatsFilename = opts[i+1]
+    i += 1
+    obsFeatsFilename = opts[i]
   elif opt == '--lengthFile':
-    lenFilename = opts[i+1]
+    i += 1
+    lenFilename = opts[i]
   elif opt.startswith("--"):
     raise Exception("Unknown option: {}".format(opt))
   i += 1
