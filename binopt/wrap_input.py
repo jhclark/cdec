@@ -21,18 +21,21 @@ obsFeatsFilename = None
 lenFile = None
 lenFilename = None
 
-opts = sys.argv[3:]
+opts = sys.argv[2:]
 if not opts[0].startswith("--"):
   raise Exception("Invalid option: {}".format(opts[0]))
+i = 0
 while i < len(opts):
   opt = opts[i]
   if opt == '--obsFeatsFile':
     i += 1
-    obsFeatsFilename = opts[i]
+    val = opts[i]
+    obsFeatsFilename = val
   elif opt == '--lengthFile':
     i += 1
-    lenFilename = opts[i]
-  elif opt.startswith("--"):
+    val = opts[i]
+    lenFilename = val
+  else:
     raise Exception("Unknown option: {}".format(opt))
   i += 1
 
