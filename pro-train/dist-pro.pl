@@ -287,9 +287,6 @@ while (1){
         push @allweights, "-w $dir/weights.$im1";
         `rm -f $dir/hgs/*.gz`;
 	my $decoder_cmd = "$decoder -c $iniFile --weights$pass_suffix $weightsFile -O $dir/hgs";
-        if ($prune_kbest_by_length_hammer) {
-            $decoder_cmd .= " | fgrep -v LengthHammer";
-        }
 	my $pcmd;
 	if ($use_make) {
 		$pcmd = "cat $srcFile | $parallelize --use-fork -p $pmem -e $logdir -j $jobs --";
@@ -367,7 +364,12 @@ while (1){
 		push @mapoutputs, "$dir/splag.$im1/$mapoutput";
 		$o2i{"$dir/splag.$im1/$mapoutput"} = "$dir/splag.$im1/$shard";
 		check_bash_call("mkdir -p $dir/kbest");
-		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
+                my $kbest_hammer_flag = "";
+                if ($prune_kbest_by_length_hammer) {
+                    $kbest_hammer_flag = "--prune_kbest_by_length_hammer";
+                }
+
+		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest $kbest_hammer_flag < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
 		if ($use_make) {
 			my $script_file = "$dir/scripts/map.$shard";
 			open F, ">$script_file" or die "Can't write $script_file: $!";
