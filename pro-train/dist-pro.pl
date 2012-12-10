@@ -98,7 +98,7 @@ if (GetOptions(
 	"graph-reg-file=s" => \$graph_reg_file,
         "graph-reg-strength=s" => \$graph_reg_strength,
 	"dominant-feat=s" => \$dominant_feat,
-	"prune_kbest_by_length_hammer" => \$prune_kbest_by_length_hammer,
+	"prune-kbest-by-length-hammer" => \$prune_kbest_by_length_hammer,
 	"reg-previous=f" => \$reg_previous,
 	"use-make=i" => \$use_make,
 	"max-iterations=i" => \$max_iterations,
