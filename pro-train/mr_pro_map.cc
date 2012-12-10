@@ -245,6 +245,8 @@ void Sample(const unsigned gamma,
             const SegmentEvaluator& scorer,
             const EvaluationMetric* metric,
             vector<TrainingInstance>* pv) {
+  assert(J_i.size() > 0);
+
   const bool invert_score = metric->IsErrorMetric();
   vector<TrainingInstance> v1, v2;
   float avg_diff = 0;
@@ -338,8 +340,8 @@ int main(int argc, char** argv) {
   // this has been moved out into dist_pro.pl
   // This can cause an abort on Lustre due to race conditions
   //MkDirP(kbest_repo);
+  size_t num_sampled = 0;
   while(in) {
-    vector<TrainingInstance> v;
     string line;
     getline(in, line);
     if (line.empty()) continue;
@@ -376,13 +378,22 @@ int main(int argc, char** argv) {
     Dedup(&J_i);
     WriteKBest(kbest_file, J_i);
 
-    Sample(gamma, xi, J_i, *ds[sent_id], metric, &v);
-    for (unsigned i = 0; i < v.size(); ++i) {
-      const TrainingInstance& vi = v[i];
-      // TODO: Append sent_id and hyp ranks (these may no longer be meaningful)... or just metric scores.
-      cout << vi.y << "\t" << vi.x << endl;
-      cout << (!vi.y) << "\t" << (vi.x * -1.0) << endl;
+    // the kbest hammer might have thrown out all usable hypotheses
+    if (J_i.size() > 0) {
+      vector<TrainingInstance> v;
+      Sample(gamma, xi, J_i, *ds[sent_id], metric, &v);
+      for (unsigned i = 0; i < v.size(); ++i) {
+        const TrainingInstance& vi = v[i];
+        // TODO: Append sent_id and hyp ranks (these may no longer be meaningful)... or just metric scores.
+        cout << vi.y << "\t" << vi.x << endl;
+        cout << (!vi.y) << "\t" << (vi.x * -1.0) << endl;
+      }
+      num_sampled += v.size();
     }
+  }
+  if (num_sampled < 1) {
+    cerr << "ERROR: Zero training examplars were sampled" << endl;
+    abort();
   }
   return 0;
 }
