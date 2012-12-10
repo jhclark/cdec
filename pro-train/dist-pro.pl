@@ -366,7 +366,7 @@ while (1){
 		check_bash_call("mkdir -p $dir/kbest");
                 my $kbest_hammer_flag = "";
                 if ($prune_kbest_by_length_hammer) {
-                    $kbest_hammer_flag = "--prune_kbest_by_length_hammer";
+                    $kbest_hammer_flag = "--prune_kbest_by_length_hammer 1";
                 }
 
 		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest $kbest_hammer_flag < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";

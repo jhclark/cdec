@@ -86,7 +86,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("kbest_size,k",po::value<unsigned>()->default_value(1500u), "Top k-hypotheses to extract")
         ("candidate_pairs,G", po::value<unsigned>()->default_value(5000u), "Number of pairs to sample per hypothesis (Gamma)")
         ("best_pairs,X", po::value<unsigned>()->default_value(50u), "Number of pairs, ranked by magnitude of objective delta, to retain (Xi)")
-        ("prune_kbest_by_length_hammer", po::value<bool>()->default_value(false), "Require the 'LengthHammer' feature to have a value of zero for all extracted k-best entries? (prior to diffing)")
+        ("prune_kbest_by_length_hammer", po::value<int>()->default_value(0), "Require the 'LengthHammer' feature to have a value of zero for all extracted k-best entries? (prior to diffing) -- Use 0 for false and 1 for true")
         ("random_seed,S", po::value<uint32_t>(), "Random seed (if not specified, /dev/random will be used)")
         ("help,h", "Help");
   po::options_description dcmdline_options;
@@ -329,7 +329,7 @@ int main(int argc, char** argv) {
   const unsigned gamma = conf["candidate_pairs"].as<unsigned>();
   const unsigned xi = conf["best_pairs"].as<unsigned>();
 
-  const bool prune_kbest_by_length_hammer = conf["prune_kbest_by_length_hammer"].as<bool>();
+  const bool prune_kbest_by_length_hammer = (conf["prune_kbest_by_length_hammer"].as<int>() != 0);
 
   string weightsf = conf["weights"].as<string>();
   vector<weight_t> weights;
