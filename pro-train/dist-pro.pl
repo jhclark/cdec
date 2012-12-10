@@ -288,7 +288,7 @@ while (1){
         `rm -f $dir/hgs/*.gz`;
 	my $decoder_cmd = "$decoder -c $iniFile --weights$pass_suffix $weightsFile -O $dir/hgs";
         if ($prune_kbest_by_length_hammer) {
-            $decode_cmd .= " | fgrep -v LengthHammer";
+            $decoder_cmd .= " | fgrep -v LengthHammer";
         }
 	my $pcmd;
 	if ($use_make) {
