@@ -78,6 +78,7 @@ my $feat_reg_file = "";
 my $graph_reg_file = ""; # graph regularizers such as neighbor regularization
 my $graph_reg_strength = ""; # graph regularizers such as neighbor regularization
 my $dominant_feat = ""; # the name of a single feature that should receive much greater weight than all other features (e.g. 100X)
+my $prune_kbest_by_length_hammer = 0; # Remove k-best entries with non-zero length hammer?
 
 # Process command-line options
 Getopt::Long::Configure("no_auto_abbrev");
@@ -97,6 +98,7 @@ if (GetOptions(
 	"graph-reg-file=s" => \$graph_reg_file,
         "graph-reg-strength=s" => \$graph_reg_strength,
 	"dominant-feat=s" => \$dominant_feat,
+	"prune_kbest_by_length_hammer" => \$prune_kbest_by_length_hammer,
 	"reg-previous=f" => \$reg_previous,
 	"use-make=i" => \$use_make,
 	"max-iterations=i" => \$max_iterations,
@@ -285,6 +287,9 @@ while (1){
         push @allweights, "-w $dir/weights.$im1";
         `rm -f $dir/hgs/*.gz`;
 	my $decoder_cmd = "$decoder -c $iniFile --weights$pass_suffix $weightsFile -O $dir/hgs";
+        if ($prune_kbest_by_length_hammer) {
+            $decode_cmd .= " | fgrep -v LengthHammer";
+        }
 	my $pcmd;
 	if ($use_make) {
 		$pcmd = "cat $srcFile | $parallelize --use-fork -p $pmem -e $logdir -j $jobs --";
