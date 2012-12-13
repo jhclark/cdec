@@ -9,14 +9,18 @@ def zopen(filename, mode='r'):
   else:
     return open(filename, mode)
 
-(graDirOut, conjunctionManifest) = sys.argv[1:]
+(graDirOut, conjunctionManifest, conjoinWordPenalty) = sys.argv[1:]
 graFiles = [ file.strip() for file in sys.stdin ]
+conjWP = conjoinWordPenalty == 'yes'
 
 def sentIdFromGra(filename):
   if filename.endswith('.gz'):
     return int(filename.split('.')[-2])
   else:
     return int(filename.split('.')[-1])
+
+def isNonterm(tok): return tok.startswith('[') and tok.endswith(']')
+def isTerminal(tok): return not isNonterm(tok)
   
 # Now sort gra files by their numeric extension
 graFiles = sorted(graFiles, key=sentIdFromGra)
@@ -48,9 +52,15 @@ for graFileIn in graFiles:
             otherFeats.append(featPair)
         lmTriggerFeat = 'LM_Trigger__{}'.format('_'.join(components))
         conjunctions.add(lmTriggerFeat) # Save LM trigger feature to conjunction manifest
-        lmTriggerFeatAndVal = '{}=1'.format(lmTriggerFeat)
 
-        allFeats = ' '.join( otherFeats + [lmTriggerFeatAndVal] )
+        lmTriggerFeatAndVal = '{}=1'.format(lmTriggerFeat)
+        newFeats = [lmTriggerFeatAndVal]
+        if conjWP:
+          tgtWords = len(filter(isTerminal, tgt.split(' ')))
+          conjWPFeatAndVal = '{}_TgtWords={}'.format(lmTriggerFeat, tgtWords)
+          newFeats.append(conjWPFeatAndVal)
+
+        allFeats = ' '.join(otherFeats + newFeats)
         print >>graOut, ' ||| '.join([lhs, src, tgt, allFeats, align])
 
 f = open(conjunctionManifest, 'w')
