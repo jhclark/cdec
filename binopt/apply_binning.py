@@ -27,6 +27,7 @@ allow_unrecognized_feats = has_opt('--allow-unrecognized-feats')
 
 # the name of the single feature that we'll be binning
 # value is None if "--bin-single-feat FeatureName" wasn't passed
+# This implies that all other features besides this feature will be kept in their original form
 bin_single_feat = get_opt_arg('--bin-single-feat')
 if bin_single_feat != None: print >>sys.stderr, "Binning single feature:", bin_single_feat
 
@@ -95,7 +96,9 @@ for line in sys.stdin:
       result.append(name + "=" + strValue)
 
     if bin_single_feat != None and bin_single_feat != name:
-      pass # we're only binning one feature, and this isn't it
+      # we're only binning one feature, and this isn't it
+      if not keep_orig_feats:
+        result.append(name + "=" + strValue)
     elif bin_single_feat == None or bin_single_feat == name:
       # either we're binning all features or this is the single feature we're binning
       try:
