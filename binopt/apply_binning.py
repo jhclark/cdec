@@ -7,7 +7,17 @@ from bisect import *
 
 (bin_info_file, mode) = sys.argv[1:3]
 
+def die(msg):
+  print >>sys.stderr, msg
+  sys.exit(1)
+
 def has_opt(flag): return flag in sys.argv[3:]
+def get_opt_arg(flag):
+  for i in range(3, len(sys.argv)):
+    if sys.argv[i] == flag:
+      if i+1 == len(sys.argv): die("ERROR: Expected argument for option " + flag)
+      return sys.argv[i+1]
+  return None
 
 keep_orig_feats = has_opt('--keep-orig-feats')
 # When discretizing only a subset of the features,
@@ -15,9 +25,10 @@ keep_orig_feats = has_opt('--keep-orig-feats')
 # be disabled, since failing on unrecognized features can help detect buts
 allow_unrecognized_feats = has_opt('--allow-unrecognized-feats')
 
-def die(msg):
-  print >>sys.stderr, msg
-  sys.exit(1)
+# the name of the single feature that we'll be binning
+# value is None if "--bin-single-feat FeatureName" wasn't passed
+bin_single_feat = get_opt_arg('--bin-single-feat')
+if bin_single_feat != None: print >>sys.stderr, "Binning single feature:", bin_single_feat
 
 if mode == 'indicator':
   print >>sys.stderr, "Using indicator bin features"
@@ -83,33 +94,37 @@ for line in sys.stdin:
     if keep_orig_feats:
       result.append(name + "=" + strValue)
 
-    try:
-      (my_bin_idx, my_bin_info) = all_bin_info[name]
+    if bin_single_feat != None and bin_single_feat != name:
+      pass # we're only binning one feature, and this isn't it
+    elif bin_single_feat == None or bin_single_feat == name:
+      # either we're binning all features or this is the single feature we're binning
+      try:
+        (my_bin_idx, my_bin_info) = all_bin_info[name]
 
       # First, do a binary seach to get in the right neighborhood
-      try:
-        start_idx = find_lt(my_bin_idx, value)
-      except:
-        print >>sys.stderr, "Feature value {} not found in index: {}".format(value, my_bin_idx)
-        raise
+        try:
+          start_idx = find_lt(my_bin_idx, value)
+        except:
+          print >>sys.stderr, "Feature value {} not found in index: {}".format(value, my_bin_idx)
+          raise
 
-      # Then iterate over the contents to find out which bins apply
-      # *starting* at i and terminating early as soon as we exceed high_value
-      found = 0
-      for (lowValue, highValue, destFeatName) in my_bin_info[start_idx:]:
-        if lowValue <= value:
-          if value < highValue:
-            destValue = "1" if useIndicators else strValue
-            result.append(destFeatName + "=" + destValue)
-            found += 1
-        else:
-          # Terminate early since values are sorted by (lowValue, highValue)
-          # REMEMBER: There could be overlapping bins!
-          break
-    except KeyError:
-      if not allow_unrecognized_feats:
-        die("Unrecognized feature: " + name)
-    if not allow_unrecognized_feats and found == 0:
-      die("Found zero bins for feature: " + name)
+        # Then iterate over the contents to find out which bins apply
+        # *starting* at i and terminating early as soon as we exceed high_value
+        found = 0
+        for (lowValue, highValue, destFeatName) in my_bin_info[start_idx:]:
+          if lowValue <= value:
+            if value < highValue:
+              destValue = "1" if useIndicators else strValue
+              result.append(destFeatName + "=" + destValue)
+              found += 1
+          else:
+            # Terminate early since values are sorted by (lowValue, highValue)
+            # REMEMBER: There could be overlapping bins!
+            break
+      except KeyError:
+        if not allow_unrecognized_feats:
+          die("Unrecognized feature: " + name)
+      if not allow_unrecognized_feats and found == 0:
+        die("Found zero bins for feature: " + name)
   feats = ' '.join(result)
   print ' ||| '.join([lhs, src, tgt, feats, align])
