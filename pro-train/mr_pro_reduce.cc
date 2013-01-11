@@ -26,6 +26,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
   opts.add_options()
         ("weights,w", po::value<string>(), "Weights from previous iteration (used as initialization and interpolation")
         ("regularization_strength,C",po::value<double>()->default_value(500.0), "l2 regularization strength")
+        ("normalize_regularizer,n", po::bool_switch()->default_value(false), "Normalize regularization constant C by the number of features")
         ("graph_regularization_strength,G",po::value<double>()->default_value(500.0), "l2 regularization strength for graph regularizer")
         ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C; this line means 'feat1 is penalized for being dissimilar from feat2 proportional to weight')")
         ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer, but not weighted by C)")
@@ -415,6 +416,16 @@ int main(int argc, char** argv) {
     ReadCorpus(rf.stream(), &testing);
   }
   cerr << "Number of features in corpus: " << FD::NumFeats() << endl;
+
+  {
+    bool normalize_regularizer = conf["normalize_regularizer"].as<bool>();
+    if (normalize_regularizer) {
+      C /= FD::NumFeats();
+      cerr << "Normalized regularizer is " << C << endl;
+    } else {
+      cerr << "Regularizer is not normalized: " << C << endl;
+    }
+  }
 
   // read additional per feature regularization weights
   // NOTE: Must do this *after* reading the corpus!
