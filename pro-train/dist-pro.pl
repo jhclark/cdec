@@ -73,6 +73,7 @@ my $uniq_feats_file;
 # regularization strength
 my $tune_regularizer = 0;
 my $reg = 500;
+my $norm_reg=0; # normalize regularizer C by the number of active features in the PRO exemplar corpus
 my $reg_previous = 5000;
 my $feat_reg_file = "";
 my $graph_reg_file = ""; # graph regularizers such as neighbor regularization
@@ -94,6 +95,7 @@ if (GetOptions(
         "weights=s" => \$initial_weights,
 	"tune-regularizer" => \$tune_regularizer,
 	"reg=f" => \$reg,
+	"norm-reg" => \$norm_reg,
       	"feat-reg-file=s" => \$feat_reg_file,
 	"graph-reg-file=s" => \$graph_reg_file,
         "graph-reg-strength=s" => \$graph_reg_strength,
@@ -470,6 +472,9 @@ while (1){
         }
         if ($dominant_feat) {
             $cmd .= " --dominant_feat $dominant_feat";
+        }
+        if ($norm_reg) {
+            $cmd .= " --normalize_regularizer";
         }
 	if ($do_binning) {
 	    $cmd .= " > $dir/weights.opt.$iteration";
