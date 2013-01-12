@@ -34,9 +34,15 @@ if bin_single_feat != None: print >>sys.stderr, "Binning single feature:", bin_s
 if mode == 'indicator':
   print >>sys.stderr, "Using indicator bin features"
   useIndicators = True
+  useQuirky = False
 elif mode == 'real':
   print >>sys.stderr, "Using real-valued bin features"
   useIndicators = False
+  useQuirky = False
+elif mode == 'quirky':
+  print >>sys.stderr, "Using quirky (exact) bin features"
+  useIndicators = False
+  useQuirky = True  
 else:
   die("Unrecognized mode: " + mode)
 
@@ -84,21 +90,34 @@ for line in sys.stdin:
   (lhs, src, tgt, feats, align) = line.strip("\n").split(' ||| ')
   featList = [x.split('=') for x in feats.split()]
 
+  #print ' ||| '.join([lhs, src, tgt, feats, align])
+  sys.stdout.write(lhs)
+  sys.stdout.write(' ||| ')
+  sys.stdout.write(src)
+  sys.stdout.write(' ||| ')
+  sys.stdout.write(tgt)
+  sys.stdout.write(' ||| ')
+
   # Remove log transform from all sa-align features:
   # MaxLexEGivenF
   # EGivenFCoherent: -log10(PairCount / SampleCount) (sa-extract/context_model.py:100)
   # MaxLexFGivenE
-  result = []
   for (name, strValue) in featList:
     value = float(strValue)
     
     if keep_orig_feats:
-      result.append(name + "=" + strValue)
+      sys.stdout.write(name)
+      sys.stdout.write("=")
+      sys.stdout.write(strValue)
+      sys.stdout.write(" ")
 
     if bin_single_feat != None and bin_single_feat != name:
       # we're only binning one feature, and this isn't it
       if not keep_orig_feats:
-        result.append(name + "=" + strValue)
+        sys.stdout.write(name)
+        sys.stdout.write("=")
+        sys.stdout.write(strValue) 
+        sys.stdout.write(" ")       
     elif bin_single_feat == None or bin_single_feat == name:
       # either we're binning all features or this is the single feature we're binning
       try:
@@ -115,19 +134,42 @@ for line in sys.stdin:
         # *starting* at i and terminating early as soon as we exceed high_value
         found = 0
         for (lowValue, highValue, destFeatName) in my_bin_info[start_idx:]:
-          if lowValue <= value:
-            if value < highValue:
-              destValue = "1" if useIndicators else strValue
-              result.append(destFeatName + "=" + destValue)
+          if useQuirky:
+            if value <= highValue:
+              # Sum of features up to this point exactly reproduce original
+              # linear feature, given equal weights
+              delta = value - lowValue
+              if math.isinf(delta):
+                delta = 0.0
+              sys.stdout.write(destFeatName)
+              sys.stdout.write("=")
+              sys.stdout.write(str(delta))
+              sys.stdout.write(" ")
               found += 1
+            else:
+              # Terminate early since values are sorted by (lowValue, highValue)
+              # REMEMBER: There could be overlapping bins!
+              break
           else:
-            # Terminate early since values are sorted by (lowValue, highValue)
-            # REMEMBER: There could be overlapping bins!
-            break
+            if lowValue <= value and value < highValue:
+              destValue = "1" if useIndicators else strValue
+              sys.stdout.write(destFeatName)
+              sys.stdout.write("=")
+              sys.stdout.write(" ")
+              sys.stdout.write(destValue)
+              found += 1
+            else:
+              # Terminate early since values are sorted by (lowValue, highValue)
+              # REMEMBER: There could be overlapping bins!
+              break
+
       except KeyError:
         if not allow_unrecognized_feats:
           die("Unrecognized feature: " + name)
       if not allow_unrecognized_feats and found == 0:
         die("Found zero bins for feature: " + name)
-  feats = ' '.join(result)
-  print ' ||| '.join([lhs, src, tgt, feats, align])
+  sys.stdout.write('||| ')
+  sys.stdout.write(align)
+  sys.stdout.write('\n')
+  #feats = ' '.join(result)
+  #print ' ||| '.join([lhs, src, tgt, feats, align])
