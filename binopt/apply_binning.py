@@ -139,14 +139,15 @@ for line in sys.stdin:
               # Sum of features up to this point exactly reproduce original
               # linear feature, given equal weights
               delta = value - lowValue
+              if math.isinf(delta):
+                delta = 0.0
+
               # Don't use scientific notation because cdec's rule lexer
               # doesn't support it
               strDelta = ("%.30f"%delta).rstrip('0').rstrip('.')
-              if math.isinf(delta):
-                delta = 0.0
               sys.stdout.write(destFeatName)
               sys.stdout.write("=")
-              sys.stdout.write(str(delta))
+              sys.stdout.write(strDelta)
               sys.stdout.write(" ")
               found += 1
             else:
