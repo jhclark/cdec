@@ -71,6 +71,7 @@ print >>sys.stderr, "Sorting and indexing bin info..."
 all_bin_info = dict()
 for (key,values) in tmp_bin_info.iteritems():
   values.sort(key=itemgetter(0,1))
+  #print '\n'.join(map(str,values))
   # Create a low value index for the bisect method
   idx = [ lowValue for (lowValue, highValue, destFeatName) in values ]
   all_bin_info[key] = (idx, values)
@@ -155,14 +156,16 @@ for line in sys.stdin:
               # REMEMBER: There could be overlapping bins!
               break
           else:
+            #print >>sys.stderr, "Trying feature '%s' value '%s': low=%s, high=%s"%(name, value, lowValue, highValue)
             if lowValue <= value and value < highValue:
+              #print >>sys.stderr, "FOUND"
               destValue = "1" if useIndicators else strValue
               sys.stdout.write(destFeatName)
               sys.stdout.write("=")
-              sys.stdout.write(" ")
               sys.stdout.write(destValue)
+              sys.stdout.write(" ")
               found += 1
-            else:
+            elif value > highValue:
               # Terminate early since values are sorted by (lowValue, highValue)
               # REMEMBER: There could be overlapping bins!
               break
@@ -171,7 +174,7 @@ for line in sys.stdin:
         if not allow_unrecognized_feats:
           die("Unrecognized feature: " + name)
       if not allow_unrecognized_feats and found == 0:
-        die("Found zero bins for feature: " + name)
+        die("Found zero bins for feature '%s' with value '%s'"%(name, value))
   sys.stdout.write('||| ')
   sys.stdout.write(align)
   sys.stdout.write('\n')
