@@ -8,6 +8,7 @@
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
 
+#include "stringlib.h"
 #include "filelib.h"
 #include "weights.h"
 #include "sparse_vector.h"
@@ -21,6 +22,12 @@ namespace po = boost::program_options;
 // positive and negative examples, so the bias should be 0
 static const double MAX_BIAS = 1e-10;
 
+struct LineFeatureGroup {
+  double C; // regularization strength for this group
+  int window_size; // number of points on either side to average
+  vector<int> feat_ids; // sequence of feature ids that make up this line to be smoothed
+};
+
 void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
   po::options_description opts("Configuration options");
   opts.add_options()
@@ -29,6 +36,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("normalize_regularizer,n", po::bool_switch()->default_value(false), "Normalize regularization constant C by the number of features")
         ("graph_regularization_strength,G",po::value<double>()->default_value(500.0), "l2 regularization strength for graph regularizer")
         ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C; this line means 'feat1 is penalized for being dissimilar from feat2 proportional to weight')")
+        ("tangent_regularization_file,L",po::value<string>(), "file to read tangent regularization configuration from (format: 'reg_strength window_size feat1_name feat2_name [feat3_name...]' -- weights are per line, not cumulative with C; this line means 'feat1...featN participate in a preferably smooth line (the line implied by the features' weights). window_size features on either side of each segment of this line will be used for approximating a tangent line and each line segment will receive a penalty with strength reg_strength for being dissimilar to that slope)")
         ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer, but not weighted by C)")
         ("regularize_to_weights,y",po::value<double>()->default_value(5000.0), "Differences in learned weights to previous weights are penalized with an l2 penalty with this strength; 0.0 = no effect")
         ("dominant_feat",po::value<string>(), "the name of a single feature, which *must* be present somewhere in at least one of the sampled exemplars, whose weight should guarantee that it always dominates all other features (i.e. that it is the primary sort criterion for hypotheses)")
@@ -112,6 +120,7 @@ double ApplyRegularizationTerms(const double C,
 				const vector<weight_t>& feat_reg,
                                 const double graph_reg_C,
                                 const vector<vector<weight_t> >& graph_reg_matrix,
+                                const vector<LineFeatureGroup>& lines,
                                 vector<weight_t>* g) {
   assert(weights.size() == g->size());
   double reg = 0;
@@ -141,6 +150,49 @@ double ApplyRegularizationTerms(const double C,
     reg += T * diff_i * diff_i;
     g_i += 2 * T * diff_i;
   }
+
+  // apply tangent regularization
+  for (size_t i = 0; i < lines.size(); i++) {
+    const LineFeatureGroup group = lines.at(i);
+    assert(group.window_size == 1);
+
+    cerr << "Analyzing feature group " << i << endl;
+    // don't apply any regularization to the feature group's endpoints
+    for (size_t j = 1; j < group.feat_ids.size() - 1; j++) {
+      int my_fid = group.feat_ids.at(j);
+      double my_weight = weights.at(my_fid);
+      double& g_j = g->at(my_fid);
+
+      // bathtub steepness parameter
+      int gamma = 2;
+
+      // determine where we would ideally like to see j
+      // by averaging the 2 weights neighboring j
+      int before_fid = group.feat_ids.at(j-1);
+      int after_fid = group.feat_ids.at(j+1);
+      double before_weight = weights.at(before_fid);
+      double after_weight = weights.at(after_fid);
+      double desired_weight = 0.5 * (before_weight + after_weight);
+      //bool is_monotone = (before_weight <= my_weight && my_weight <= after_weight) || (before_weight >= my_weight && my_weight >= after_weight);
+      cerr << "Before " << before_weight << "; my " << my_weight << "; after " << after_weight << endl;
+
+      // scale the deviation penalty by how far apart the points on either side are
+      // this means we don't penalize too much when a function is quickly changing
+      // but penalize very harshly when we have evidence that we're in a region where the function isn't changing much elsewhere
+      double span = before_weight - after_weight;
+      double bathtub_scale = pow(span, -2 * gamma);
+
+      double deviation = desired_weight - my_weight;
+      cerr << "Deviation is " << deviation << endl;
+      //cerr << "Desired delta is " << desired_delta << "; actual delta is " << actual_delta << "; badness is " << badness <<  endl;
+
+      reg += group.C * pow(deviation, 2 * gamma);
+      cerr << "Gradient before " << g_j << endl;
+      g_j -= 2 * gamma * group.C * deviation;
+      cerr << "Gradient after " << g_j << endl;
+    }
+  }
+
   return reg;
 }
 
@@ -190,6 +242,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
 		       const vector<weight_t>& feat_reg,
                        const double graph_reg_C,
                        const vector<vector<weight_t> >& graph_reg_matrix,
+                       const vector<LineFeatureGroup>& lines,
                        int dominant_feat_id,
                        vector<weight_t>* px) {
 
@@ -213,7 +266,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
     }
 
     // handle regularizer
-    double reg = ApplyRegularizationTerms(C, T, x, prev_x, feat_reg, graph_reg_C, graph_reg_matrix, &vg);
+    double reg = ApplyRegularizationTerms(C, T, x, prev_x, feat_reg, graph_reg_C, graph_reg_matrix, lines, &vg);
     cll += reg;
     cerr << cll << " (REG=" << reg << ")\tPPL=" << ppl << "\t TEST_PPL=" << tppl << "\t" << endl;
     try {
@@ -276,6 +329,9 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
           }
         }
       }
+
+      // debug write weights
+      //Weights::WriteToFile("-", x);
       
     } catch (...) {
       cerr << "Exception caught, assuming convergence is close enough...\n";
@@ -365,6 +421,64 @@ void ReadFeatMatrix(const string& filename,
   }
 }
 
+void ReadTangentRegularizationFile(string filename, vector<LineFeatureGroup>* lines) {
+
+  if (!SILENT) cerr << "Reading tangent regularization configuration from " << filename << endl;
+  ReadFile in_file(filename);
+  istream& in = *in_file.stream();
+  assert(in);
+  
+  bool fl = false;
+  string buf;
+  while (in) {
+
+    getline(in, buf);
+    if (buf.size() == 0) continue;
+    if (buf[0] == '#') continue;
+    if (buf[0] == ' ') {
+      cerr << "Tangent regularization file lines may not start with whitespace.\n" << buf << endl;
+      abort();
+    }
+
+    // = becomes space
+    for (int i = buf.size() - 1; i > 0; --i)
+      if (buf[i] == '=' || buf[i] == '\t') { buf[i] = ' '; break; }
+
+    vector<string> toks;
+    Tokenize(buf, ' ', &toks);
+    if (!toks.size() >= 4) {
+      cerr << "ERROR: Expected tangent regularizer configuration line to contain 'reg_strength window_size feat_id1 feat_id2 [feat_ids...]' but instead found: " << buf << endl;
+      abort();
+    }
+
+    LineFeatureGroup group;
+
+    // read the regularizer strength C
+    group.C = strtod(toks.at(0).c_str(), NULL);
+    cerr << "Parsed C " << group.C << endl;
+
+    // read the window size
+    group.window_size = atoi(toks.at(1).c_str());
+    cerr << "Parsed window size " << group.window_size << endl;
+
+    // read each feature that is part of this line
+    for (size_t i = 2; i < toks.size(); i++) {
+      int feat_id = FD::Convert(toks.at(i));
+      group.feat_ids.push_back(feat_id);
+    }
+
+    if (!SILENT) {
+          // TODO: Cute informational message about what was loaded so far
+    }
+    lines->push_back(group);
+  } // end for each line in config file...
+
+  if (!SILENT) {
+    if (fl) { cerr << endl; }
+    // TODO: Cute informational message about what was loaded
+  }
+}
+
 void ResizeMatrix(const size_t size, vector<vector<weight_t> >* pweights) {
   vector<vector<weight_t> >& weights = *pweights;
 
@@ -448,6 +562,12 @@ int main(int argc, char** argv) {
     //        cerr << "FeatMatrix: " << FD::Convert(i) << " " << FD::Convert(j) << " " << graph_reg_matrix[i][j] << endl;
   }
 
+  // read in configuration for tangent regularization
+  vector<LineFeatureGroup> lines;
+  if (conf.count("tangent_regularization_file")) {
+    ReadTangentRegularizationFile(conf["tangent_regularization_file"].as<string>(), &lines);
+  }
+
   vector<weight_t> x, prev_x;  // x[0] is bias
   if (conf.count("weights")) {
     Weights::InitFromFile(conf["weights"].as<string>(), &x);
@@ -476,7 +596,7 @@ int main(int argc, char** argv) {
     while(C < max_reg) {
       cerr << "C=" << C << "\tT=" <<T << endl;
       tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
-                             feat_reg, graph_reg_C, graph_reg_matrix, dominant_feat_id, &x);
+                             feat_reg, graph_reg_C, graph_reg_matrix, lines, dominant_feat_id, &x);
       sp.push_back(make_pair(C, tppl));
       C *= sweep_factor;
     }
@@ -499,8 +619,9 @@ int main(int argc, char** argv) {
     }
     C = sp[best_i].first;
   }  // tune regularizer
+
   tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
-                         feat_reg, graph_reg_C, graph_reg_matrix, dominant_feat_id, &x);
+                         feat_reg, graph_reg_C, graph_reg_matrix, lines, dominant_feat_id, &x);
   if (conf.count("weights")) {
     for (int i = 1; i < x.size(); ++i) {
       x[i] = (x[i] * psi) + prev_x[i] * (1.0 - psi);

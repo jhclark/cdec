@@ -78,6 +78,7 @@ my $reg_previous = 5000;
 my $feat_reg_file = "";
 my $graph_reg_file = ""; # graph regularizers such as neighbor regularization
 my $graph_reg_strength = ""; # graph regularizers such as neighbor regularization
+my $tangent_reg_file = ""; # tangent regularization
 my $dominant_feat = ""; # the name of a single feature that should receive much greater weight than all other features (e.g. 100X)
 my $prune_kbest_by_length_hammer = 0; # Remove k-best entries with non-zero length hammer?
 
@@ -99,6 +100,7 @@ if (GetOptions(
       	"feat-reg-file=s" => \$feat_reg_file,
 	"graph-reg-file=s" => \$graph_reg_file,
         "graph-reg-strength=s" => \$graph_reg_strength,
+	"tangent-reg-file=s" => \$tangent_reg_file,
 	"dominant-feat=s" => \$dominant_feat,
 	"prune-kbest-by-length-hammer" => \$prune_kbest_by_length_hammer,
 	"reg-previous=f" => \$reg_previous,
@@ -469,6 +471,9 @@ while (1){
         }
         if ($graph_reg_strength) {
             $cmd .= " -G $graph_reg_strength";
+        }
+        if ($tangent_reg_file) {
+            $cmd .= " -L $tangent_reg_file";
         }
         if ($dominant_feat) {
             $cmd .= " --dominant_feat $dominant_feat";
