@@ -180,15 +180,15 @@ double ApplyRegularizationTerms(const double C,
       // this means we don't penalize too much when a function is quickly changing
       // but penalize very harshly when we have evidence that we're in a region where the function isn't changing much elsewhere
       double span = before_weight - after_weight;
-      double bathtub_scale = pow(span, -2 * gamma);
+      double bathtub_scale = 1.0 - pow(tanh(span), 2 * gamma);
 
       double deviation = desired_weight - my_weight;
-      cerr << "Deviation is " << deviation << endl;
+      cerr << "Deviation is " << deviation << "; bathtub_scale is " << bathtub_scale << endl;
       //cerr << "Desired delta is " << desired_delta << "; actual delta is " << actual_delta << "; badness is " << badness <<  endl;
 
-      reg += group.C * pow(deviation, 2 * gamma);
+      reg += group.C * bathtub_scale * deviation * deviation;
       cerr << "Gradient before " << g_j << endl;
-      g_j -= 2 * gamma * group.C * deviation;
+      g_j -= 2 * group.C * bathtub_scale * deviation;
       cerr << "Gradient after " << g_j << endl;
     }
   }
