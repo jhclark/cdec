@@ -172,24 +172,71 @@ double ApplyRegularizationTerms(const double C,
       int after_fid = group.feat_ids.at(j+1);
       double before_weight = weights.at(before_fid);
       double after_weight = weights.at(after_fid);
-      double desired_weight = 0.5 * (before_weight + after_weight);
-      //bool is_monotone = (before_weight <= my_weight && my_weight <= after_weight) || (before_weight >= my_weight && my_weight >= after_weight);
-      cerr << "Before " << before_weight << "; my " << my_weight << "; after " << after_weight << endl;
+      double expected_weight = 0.5 * (before_weight + after_weight);
+      bool is_monotone = (before_weight <= my_weight && my_weight <= after_weight) || (before_weight >= my_weight && my_weight >= after_weight);
+      cerr << "Before " << before_weight << "; my " << my_weight << "; after " << after_weight << " " << (is_monotone ? "GOOD" : "BAD") << endl;
 
       // scale the deviation penalty by how far apart the points on either side are
       // this means we don't penalize too much when a function is quickly changing
       // but penalize very harshly when we have evidence that we're in a region where the function isn't changing much elsewhere
-      double span = before_weight - after_weight;
-      double bathtub_scale = 1.0 - pow(tanh(span), 2 * gamma);
+      double half_span = 0.5 * (before_weight - after_weight);
 
-      double deviation = desired_weight - my_weight;
-      cerr << "Deviation is " << deviation << "; bathtub_scale is " << bathtub_scale << endl;
+      double deviation = expected_weight - my_weight;
       //cerr << "Desired delta is " << desired_delta << "; actual delta is " << actual_delta << "; badness is " << badness <<  endl;
 
-      reg += group.C * bathtub_scale * deviation * deviation;
-      cerr << "Gradient before " << g_j << endl;
-      g_j -= 2 * group.C * bathtub_scale * deviation;
-      cerr << "Gradient after " << g_j << endl;
+      if (deviation != 0.0) {
+
+        cerr << "Gradient before " << g_j << endl;
+        double scaled_deviation = deviation / half_span;
+        double MAX_SCALED_DEVIATION = 10.0;
+        double bathtub_damping;
+        // if we're seeing a flat line, don't dampen regularizer at all
+        // if the scaled_deviation is sufficiently large, bathtub_damping quickly approaches 1 -- and we may see inf if we try to compute it numerically
+        if (before_weight == after_weight || abs(scaled_deviation) >= MAX_SCALED_DEVIATION) {
+          bathtub_damping = 1.0;
+          g_j -= 2 * group.C * deviation;
+        } else {
+          bathtub_damping = pow(tanh(scaled_deviation), 2 * gamma);
+
+          /*
+          double sech_scaled_deviation = 1.0 / cosh(scaled_deviation);
+          double sinh_2scaled_deviation = sinh(2 * scaled_deviation);
+          double scaling = -1.0 / half_span;
+          double term1 = group.C * deviation * sech_scaled_deviation * sech_scaled_deviation * half_span * sinh_2scaled_deviation;
+          double term2 = 2 * gamma * deviation * pow( tanh(scaled_deviation), 2 * gamma - 1);
+          double gradient_penalty = scaling * (term1 + term2);
+          cerr << "scaled_deviation is " << scaled_deviation
+            //<< "; sech_scaled_deviation is " << sech_scaled_deviation
+            // << "; sinh_2scaled_deviation " << sinh_2scaled_deviation
+            // << "; half_span is " << half_span
+               << "; scaling is " << scaling
+               << "; term1 is " << term1
+               << "; term2 is " << term2
+               << "; gradient_penalty is " << gradient_penalty
+               << endl;
+          */
+
+          double sech_scaled_deviation = 1.0 / cosh(scaled_deviation);
+          double tanh_scaled_deviation = tanh(scaled_deviation);
+          double term1 = 2.0 * gamma / half_span * deviation * deviation * sech_scaled_deviation * sech_scaled_deviation * pow(tanh_scaled_deviation, 2*gamma-1);
+          double term2 = 2.0 * deviation * pow(tanh_scaled_deviation, 2.0 * gamma);
+          double gradient_penalty = group.C * (term1 + term2);
+          cerr << "scaled_deviation is " << scaled_deviation
+            //<< "; sech_scaled_deviation is " << sech_scaled_deviation
+            //<< "; tanh_scaled_deviation is " << tanh_scaled_deviation
+            // << "; half_span is " << half_span
+               << "; term1 is " << term1
+               << "; term2 is " << term2
+               << "; gradient_penalty is " << gradient_penalty
+               << endl;
+
+          g_j -= gradient_penalty;
+        }
+        cerr << "Gradient after " << g_j << endl;
+        cerr << "Deviation is " << deviation << "; bathtub_damping is " << bathtub_damping << "; overall penalty is " << (bathtub_damping * deviation * deviation) << endl;
+        cerr << "-------" << endl;
+        reg += group.C * bathtub_damping * deviation * deviation;
+      }
     }
   }
 
