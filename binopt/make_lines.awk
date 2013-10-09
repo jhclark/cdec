@@ -8,7 +8,8 @@
 BEGIN {
   prevCount=0
   first=1
-  C=5000
+# Use a *very* strong regularization penalty on this one since we should be very precisely penalizing bad things
+  C=5000000
   windowSize=1
 }
 
