@@ -610,6 +610,10 @@ int main(int argc, char** argv) {
   }
 
   bool regularize_by_group = conf.count("regularize_by_group") > 0;
+  if (regularize_by_group)
+    cerr << "Regularize by group: ON" << endl;
+  else
+    cerr << "Regularize by group: OFF" << endl;
 
   double graph_reg_C = conf["graph_regularization_strength"].as<double>(); // will be overridden if parameter is tuned
 
