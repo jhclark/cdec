@@ -37,6 +37,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("graph_regularization_strength,G",po::value<double>()->default_value(500.0), "l2 regularization strength for graph regularizer")
         ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C; this line means 'feat1 is penalized for being dissimilar from feat2 proportional to weight')")
         ("tangent_regularization_file,L",po::value<string>(), "file to read tangent regularization configuration from (format: 'reg_strength window_size feat1_name feat2_name [feat3_name...]' -- weights are per line, not cumulative with C; this line means 'feat1...featN participate in a preferably smooth line (the line implied by the features' weights). window_size features on either side of each segment of this line will be used for approximating a tangent line and each line segment will receive a penalty with strength reg_strength for being dissimilar to that slope)")
+        ("regularize_by_group,x",po::value<string>(), "For feature groups (lines) defined in the tangent_regularization_file, apply the regularizer to the average weight over all bins.")
         ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer, but not weighted by C)")
         ("regularize_to_weights,y",po::value<double>()->default_value(5000.0), "Differences in learned weights to previous weights are penalized with an l2 penalty with this strength; 0.0 = no effect")
         ("dominant_feat",po::value<string>(), "the name of a single feature, which *must* be present somewhere in at least one of the sampled exemplars, whose weight should guarantee that it always dominates all other features (i.e. that it is the primary sort criterion for hypotheses)")
@@ -121,12 +122,15 @@ double ApplyRegularizationTerms(const double C,
                                 const double graph_reg_C,
                                 const vector<vector<weight_t> >& graph_reg_matrix,
                                 const vector<LineFeatureGroup>& lines,
+                                const bool regularize_by_group,
                                 vector<weight_t>* g) {
   assert(weights.size() == g->size());
   double reg = 0;
   for (size_t i = 0; i < weights.size(); ++i) {
     const double prev_w_i = (i < prev_weights.size() ? prev_weights[i] : 0.0);
     const double& w_i = weights.at(i);
+    // even if regularize_by_group is true, we will first add this term
+    // and then subtract it off later when we actually iterate over the lines
     double& g_i = (*g)[i];
     reg += (C + feat_reg.at(i)) * w_i * w_i;
     g_i += 2 * (C + feat_reg.at(i)) * w_i;
@@ -162,6 +166,15 @@ double ApplyRegularizationTerms(const double C,
       int my_fid = group.feat_ids.at(j);
       double my_weight = weights.at(my_fid);
       double& g_j = g->at(my_fid);
+
+      if (regularize_by_group) {
+        // first, subtract off the original regularization term for this feature
+        // and add back 1/N of the regularizer, based on how many points we have in our line
+        double C_delta = -C + C / group.feat_ids.size();
+        assert(C_delta < 0.0);
+        reg += C_delta  * my_weight * my_weight;
+        g_j += 2 * C_delta * my_weight;
+      }
 
       // bathtub steepness parameter
       int gamma = 2;
@@ -290,6 +303,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
                        const double graph_reg_C,
                        const vector<vector<weight_t> >& graph_reg_matrix,
                        const vector<LineFeatureGroup>& lines,
+                       const bool regularize_by_group,
                        int dominant_feat_id,
                        vector<weight_t>* px) {
 
@@ -313,7 +327,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
     }
 
     // handle regularizer
-    double reg = ApplyRegularizationTerms(C, T, x, prev_x, feat_reg, graph_reg_C, graph_reg_matrix, lines, &vg);
+    double reg = ApplyRegularizationTerms(C, T, x, prev_x, feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, &vg);
     cll += reg;
     cerr << cll << " (REG=" << reg << ")\tPPL=" << ppl << "\t TEST_PPL=" << tppl << "\t" << endl;
     try {
@@ -595,6 +609,8 @@ int main(int argc, char** argv) {
     Weights::InitFromFile(conf["regularization_file"].as<string>(), &feat_reg);
   }
 
+  bool regularize_by_group = conf.count("regularize_by_group") > 0;
+
   double graph_reg_C = conf["graph_regularization_strength"].as<double>(); // will be overridden if parameter is tuned
 
   // read additional feature pair regularization weights for graph regularization
@@ -643,7 +659,7 @@ int main(int argc, char** argv) {
     while(C < max_reg) {
       cerr << "C=" << C << "\tT=" <<T << endl;
       tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
-                             feat_reg, graph_reg_C, graph_reg_matrix, lines, dominant_feat_id, &x);
+                             feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, &x);
       sp.push_back(make_pair(C, tppl));
       C *= sweep_factor;
     }
@@ -668,7 +684,7 @@ int main(int argc, char** argv) {
   }  // tune regularizer
 
   tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
-                         feat_reg, graph_reg_C, graph_reg_matrix, lines, dominant_feat_id, &x);
+                         feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, &x);
   if (conf.count("weights")) {
     for (int i = 1; i < x.size(); ++i) {
       x[i] = (x[i] * psi) + prev_x[i] * (1.0 - psi);
