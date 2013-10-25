@@ -81,6 +81,7 @@ my $graph_reg_strength = ""; # graph regularizers such as neighbor regularizatio
 my $tangent_reg_file = ""; # tangent regularization
 my $dominant_feat = ""; # the name of a single feature that should receive much greater weight than all other features (e.g. 100X)
 my $prune_kbest_by_length_hammer = 0; # Remove k-best entries with non-zero length hammer?
+my $regularize_by_group = 0; # evenly distribute basic L2 regularizer C over features instead of applying it individually to each feature?
 
 # Process command-line options
 Getopt::Long::Configure("no_auto_abbrev");
@@ -103,6 +104,7 @@ if (GetOptions(
 	"tangent-reg-file=s" => \$tangent_reg_file,
 	"dominant-feat=s" => \$dominant_feat,
 	"prune-kbest-by-length-hammer" => \$prune_kbest_by_length_hammer,
+        "regularize-by-group" => \$regularize_by_group,
 	"reg-previous=f" => \$reg_previous,
 	"use-make=i" => \$use_make,
 	"max-iterations=i" => \$max_iterations,
@@ -480,6 +482,9 @@ while (1){
         }
         if ($norm_reg) {
             $cmd .= " --normalize_regularizer";
+        }
+        if ($regularize_by_group) {
+            $cmd .= " --regularize_by_group";
         }
 	if ($do_binning) {
 	    $cmd .= " > $dir/weights.opt.$iteration";
