@@ -6,7 +6,8 @@ import itertools
 # f = source
 # e = target
 # g = genres
-(fSeen, fFileIn, eFileIn, gFileIn, fFileOut, eFileOut, gFileOut) = sys.argv[1:]
+(fSeen, fFileIn, eFileIn, gFileIn, fFileOut, eFileOut, gFileOut, numRefs) = sys.argv[1:]
+numRefs = int(numRefs)
 
 def gzipopen(filename, mode):
      if filename.endswith(".gz"):
@@ -39,9 +40,16 @@ with gzipopen(fFileIn, 'r') as fIn, \
           nLines += 1
           if fLine in seen:
                numDups += 1
+               for i in range(numRefs-1):
+                    r = gIn.next()
+                    if not r: raise Exception("Not enough lines in file: " + eFileIn)
           else:
                fOut.write(fLine)
                eOut.write(eLine)
+               for i in range(numRefs-1):
+                    r = gIn.next()
+                    if not r: raise Exception("Not enough lines in file: " + eFileIn)
+                    eOut.write(r)
                gOut.write(gLine)
                # We don't record additional seen sentences in the training set because:
                # 1) We don't want to internally dedupe in the training set
