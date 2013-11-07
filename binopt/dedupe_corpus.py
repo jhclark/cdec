@@ -8,9 +8,15 @@ import itertools
 # g = genres
 (fSeen, fFileIn, eFileIn, gFileIn, fFileOut, eFileOut, gFileOut) = sys.argv[1:]
 
+def gzipopen(filename):
+     if filename.endswith(".gz"):
+          return gzip.open(filename, 'r')
+     else:
+          return open(filename, 'r')
+
 # Record which source sentences we've seen so far
 # so that we can eliminate exact duplicates
-with gzip.open(fSeen) as fIn:
+with gzipopen(fSeen) as fIn:
      seen = set([line for line in fIn])
 
 # Finally, iterate over the training data
@@ -19,12 +25,12 @@ nLines = 0
 print "Reading file", fFileIn
 print "Reading file", eFileIn
 print "Reading file", gFileIn
-with gzip.open(fFileIn, 'r') as fIn, \
-   gzip.open(fFileOut, 'w') as fOut, \
-   gzip.open(eFileIn, 'r') as eIn, \
-   gzip.open(eFileOut, 'w') as eOut, \
-   gzip.open(gFileIn, 'r') as gIn, \
-   gzip.open(gFileOut, 'w') as gOut:
+with gzipopen(fFileIn, 'r') as fIn, \
+   gzipopen(fFileOut, 'w') as fOut, \
+   gzipopen(eFileIn, 'r') as eIn, \
+   gzipopen(eFileOut, 'w') as eOut, \
+   gzipopen(gFileIn, 'r') as gIn, \
+   gzipopen(gFileOut, 'w') as gOut:
      for (fLine, eLine, gLine) in itertools.izip_longest(fIn, eIn, gIn):
           if not fLine: raise Exception("Not enough lines in file: " + fFileIn)
           if not eLine: raise Exception("Not enough lines in file: " + eFileIn)
