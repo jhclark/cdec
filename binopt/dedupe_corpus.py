@@ -8,11 +8,11 @@ import itertools
 # g = genres
 (fSeen, fFileIn, eFileIn, gFileIn, fFileOut, eFileOut, gFileOut) = sys.argv[1:]
 
-def gzipopen(filename):
+def gzipopen(filename, mode):
      if filename.endswith(".gz"):
-          return gzip.open(filename, 'r')
+          return gzip.open(filename, mode)
      else:
-          return open(filename, 'r')
+          return open(filename, mode)
 
 # Record which source sentences we've seen so far
 # so that we can eliminate exact duplicates
