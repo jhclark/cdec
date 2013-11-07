@@ -32,28 +32,23 @@ with gzipopen(fFileIn, 'r') as fIn, \
    gzipopen(eFileOut, 'w') as eOut, \
    gzipopen(gFileIn, 'r') as gIn, \
    gzipopen(gFileOut, 'w') as gOut:
-     for (fLine, eLine, gLine) in itertools.izip_longest(fIn, eIn, gIn):
+     for (fLine, gLine) in itertools.izip_longest(fIn, gIn):
           if not fLine: raise Exception("Not enough lines in file: " + fFileIn)
-          if not eLine: raise Exception("Not enough lines in file: " + eFileIn)
+          eLines = [ eIn.next() for i in range(numRefs) ]
+          if len(eLines) != numRefs: raise Exception("Not enough lines in file: " + eFileIn)
           if not gLine: raise Exception("Not enough lines in file: " + gFileIn)
-
           nLines += 1
+
           if fLine in seen:
                numDups += 1
-               for i in range(numRefs-1):
-                    r = gIn.next()
-                    if not r: raise Exception("Not enough lines in file: " + eFileIn)
           else:
                fOut.write(fLine)
-               eOut.write(eLine)
-               for i in range(numRefs-1):
-                    r = gIn.next()
-                    if not r: raise Exception("Not enough lines in file: " + eFileIn)
-                    eOut.write(r)
+               for eLine in eLines:
+                    eOut.write(eLine)
                gOut.write(gLine)
                # We don't record additional seen sentences in the training set because:
                # 1) We don't want to internally dedupe in the training set
                # 2) That would be a very large set to hold in memory :)
 
 dupsPercent = float(numDups) / float(nLines) * 100
-print "Removed " + str(numDups) + " training set duplicates seen in tune or test set: " + str(dupsPercent) + "%"
+print "Removed " + str(numDups) + " training set duplicates seen in tune or test set: " + str(dupsPercent) + "%" + " (" + str(numDups) + " / " + str(nLines) + ")"
