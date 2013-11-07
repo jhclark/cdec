@@ -16,7 +16,7 @@ def gzipopen(filename, mode):
 
 # Record which source sentences we've seen so far
 # so that we can eliminate exact duplicates
-with gzipopen(fSeen) as fIn:
+with gzipopen(fSeen, 'r') as fIn:
      seen = set([line for line in fIn])
 
 # Finally, iterate over the training data
