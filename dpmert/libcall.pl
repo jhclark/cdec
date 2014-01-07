@@ -57,13 +57,15 @@ sub check_call {
     }
 }
 
+# Don't use -u on Trestles since the new /etc/bashrc of 2014 references undeclared variables
 sub check_bash_call {
-    my @args = ( "bash", "-auxeo", "pipefail", "-c", "@_");
+    my @args = ( "bash", "-axeo", "pipefail", "-c", "@_");
     check_call(@args);
 }
 
+# Don't use -u on Trestles since the new /etc/bashrc of 2014 references undeclared variables
 sub check_bash_output {
-    my @args = ( "bash", "-auxeo", "pipefail", "-c", "@_");
+    my @args = ( "bash", "-axeo", "pipefail", "-c", "@_");
     return check_output(@args);
 }
 
