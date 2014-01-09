@@ -29,7 +29,7 @@ env = Environment(PREFIX=GetOption('prefix'),
                       CPPPATH = include,
                       LIBPATH = [],
                       LIBS = Split('boost_program_options boost_serialization boost_thread z'),
-                      LINKFLAGS = "--static",
+#                      LINKFLAGS = "--static",
 		      CCFLAGS=Split('-g -DHAVE_SCONS --static -DJLM_REAL_VALUES'))
 
 import os.path
