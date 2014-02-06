@@ -11,6 +11,10 @@ BEGIN {
 # Use a *very* strong regularization penalty on this one since we should be very precisely penalizing bad things
   #C=5000000
   windowSize=1
+  writeConjunctions=1
+
+  curLineId=0
+  curFeatId=0
 }
 
 /^bin/ {
@@ -30,20 +34,44 @@ BEGIN {
 
   # TODO: Detect new feature groups
   if (prevOrigFeat != origFeat) {
-      if (first) {
-	  first=0
-      } else {
-	  printf "\n"
-      }
-      printf C" "windowSize
+      curLineId += 1
+      curFeatId = 1
   }
 
-  if (prevOrigFeat == origFeat && prevHighVal == lowVal) {
-    printf " "binFeat
-  }
+  featArray[curLineId,curFeatId] = binFeat
+  featArrayLens[curLineId] += 1
+  curFeatId += 1
 
   prevOrigFeat=origFeat
   prevBinFeat=binFeat
   prevHighVal=highVal
   prevCount=count
+}
+
+# Print all of the features
+END {
+    for (i = 1; i <= curLineId; i++) {
+        printf C" "windowSize
+        for (j = 1; j <= featArrayLens[i]; j++) {
+            binFeat = featArray[i,j]
+            printf " "binFeat	    
+        }
+        printf "\n"
+    }
+
+    if (writeConjunctions) {
+        for (i = 1; i <= curLineId; i++) {
+            for (j = 1; j <= featArrayLens[i]; j++) {
+                binFeat1 = featArray[i,j]
+                for (ii = 1; ii < i; ii++) {
+                    printf C" "windowSize
+                    for (jj = 1; jj <= featArrayLens[ii]; jj++) {
+                        binFeat2 = featArray[ii,jj]
+                        printf " "binFeat1"__"binFeat2
+                    }
+                    printf "\n"
+                }
+            }
+	}
+    }
 }
