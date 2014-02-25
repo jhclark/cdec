@@ -63,6 +63,7 @@ my $useqsub = 0;
 my $initial_weights;
 my $pass_suffix = '';
 my $cpbin=1;
+my $dont_iterative_cleanup = 0;
 
 # binning additions
 my $do_binning = 0;
@@ -88,6 +89,7 @@ Getopt::Long::Configure("no_auto_abbrev");
 if (GetOptions(
 	"jobs=i" => \$jobs,
 	"dont-clean" => \$disable_clean,
+	"dont-iterative-cleanup" => \$dont_iterative_cleanup,
 	"pass-suffix=s" => \$pass_suffix,
         "qsub" => \$useqsub,
 	"dry-run" => \$dryrun,
@@ -506,10 +508,16 @@ while (1){
 	}
 
 	# Run binning, if desired
-	if($do_binning) {
+	if ($do_binning) {
 	    my $do_reopt = 1;
 	    check_bash_call("$BINNER $dir/weights.opt.$iteration $uniq_feats_file $dir/weights.$iteration $dir $iteration $binner_K $bin_count $do_reopt");
 	}
+
+        if (!$dont_iterative_cleanup) {
+            # TODO: HACK: XXX: Hardcoded path to parallel bzip (several fold faster than single threaded bzip)
+            check_bash_call("tar -c splag.$im1 | /home/jhclark/software/pbzip2-1.1.6/pbzip2 -c > splag.$im1.bz2");
+            `rm -rf splag.$im1`;
+        }
 
 	$lastPScore = $score;
 	$iteration++;
