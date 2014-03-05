@@ -5,7 +5,7 @@ import codecs
 import itertools
 import argparse
 
-# Adds extra features:
+# Adds extra features to an **already discretized** grammar
 # Nonterminal count
 # Source/target terminal word counts (yes, we're duplicating target)
 # Source/target high-frequency word count
@@ -18,19 +18,31 @@ import argparse
 #       be dropped).
 
 parser = argparse.ArgumentParser(description='Add extra features such as High Frequency Word Counts')
-#parser.add_argument('srcHfwFile', metavar='N', type=int, nargs='+', help='Source high frequency words file')
-parser.add_argument('--srcTermFeats', help='Use source length features (number of terminals)', action='store_true')
-parser.add_argument('--tgtTermFeats', help='Use target length features (number of terminals)', action='store_true')
-
-parser.add_argument('--nontermFeats', help='Use non-terminal features', action='store_true')
 
 parser.add_argument('--srcHfwFile', help='Source high frequency words file')
 parser.add_argument('--tgtHfwFile', help='Target high frequency words file')
-parser.add_argument('--srcHfwCounts', help='Use source high frequency word count features using all words in the HFW words file (requires filename)', action='store_true')
-parser.add_argument('--tgtHfwCounts', help='Use target high frequency word count features using all words in the HFW words file (requires filename)', action='store_true')
-parser.add_argument('--srcHfwLex', type=int, help='Use source high frequency word lexical features, using the top N words (requires filename)')
-parser.add_argument('--tgtHfwLex', type=int, help='Use target high frequency word lexical features, using the top N words (requires filename)')
-parser.add_argument('--conjoin', type=int, help='Use conjunctions of length N (recommended: 4)', default=0)
+parser.add_argument('--hfwLex', type=int, help='Use source/target high frequency word lexical indicator features, using the top N words (requires argument N)')
+# Counts will get added and discretized separately.
+
+parser.add_argument('--srcTermFeats', help='Use source terminal count (phrase length) integer features (number of terminals)', action='store_true')
+parser.add_argument('--tgtTermFeats', help='Use source terminal count (phrase length) integer features (number of terminals)', action='store_true')
+
+### Rule-level features ###
+parser.add_argument('--srcBrownPaths', help='Source brown clusters paths file (cluster, word, freq)', action='store_true')
+parser.add_argument('--tgtBrownPaths', help='Target brown clusters paths file (cluster, word, freq)', action='store_true')
+parser.add_argument('--brownUnigrams', help='Emit brown unigram indicators', action='store_true') ###
+
+### Alignment-level conjunctions ###
+parser.add_argument('--brownAligned', help='Emit brown indicators for aligned word pairs', action='store_true') ###
+parser.add_argument('--puncAligned', help='Emit punctuation indicators for aligned word pairs', action='store_true') ###
+### How do we add discretized word frequencies as conjunctions now? Read in the discretization file here? Make the conjunction script more complicated?
+### How do we add discretized word character counts here?
+### #prefix and +suffix rules for arabic? or will this fall out from frequency features?
+
+### Word-level features ###
+# We add a hypothetical IsLeftmost and IsRightmost word-level features (for brown and word-freq features), but these are guaranteed to have no signal at the phrase level
+# IsAligned (left-unaligned, right-unaligned)
+# Conjoin by position from left (1,2,3),and from right (-1, -2, -3)
 
 args = parser.parse_args()
 
@@ -39,18 +51,32 @@ sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 sys.stderr = codecs.getwriter('utf-8')(sys.stderr)
 
 if args.srcHfwFile:
-    srcHfwList = [line.strip() for line in codecs.open(args.srcHfwFile, 'r', 'utf-8')]
-    # Use whole file for counts
-    srcHfwCountSet = set(srcHfwList)
-    # Use subset for lexical features
+    srcHfwList = []
+    for line in codecs.open(args.srcHfwFile, 'r', 'utf-8'):
+        (word, freq) = line.split()
+        srcHfwList.append(word)
     srcHfwLexSet = set(srcHfwList[:args.srcHfwLex])
 
 if args.tgtHfwFile:
-    tgtHfwList = [line.strip() for line in codecs.open(args.tgtHfwFile, 'r', 'utf-8')]
-    tgtHfwCountSet = set(tgtHfwList)
-    tgtHfwLexSet = set(tgtHfwList[:args.tgtHfwLex])
+    tgytHfwList = []
+    for line in codecs.open(args.tgytHfwFile, 'r', 'utf-8'):
+        (word, freq) = line.split()
+        tgytHfwList.append(word)
+    tgytHfwLexSet = set(tgytHfwList[:args.tgytHfwLex])
 
-def isPunct(tok): return all([ unicodedata.category(c) == 'P' for c in tok])
+if args.srcBrownPaths:
+    srcBrown = dict()
+    for line in codecs.open(args.srcBrownPaths, 'r' ,'utf-8'):
+        (cluster, word, xx) = line.split()
+        srcBrown[word] = cluster
+
+if args.tgtBrownPaths:
+    tgtBrown = dict()
+    for line in codecs.open(args.tgtBrownPaths, 'r' ,'utf-8'):
+        (cluster, word, xx) = line.split()
+        tgtBrown[word] = cluster
+
+def isPunct(tok): return all([ unicodedata.category(c) == 'P' for c in tok ])
 def isNonterm(tok): return len(tok) >= 3 and tok[0] == '[' and tok[-1] == ']'
 def escapeFeat(name): return name.replace(';','SEMI')
 
@@ -62,72 +88,46 @@ for line in sys.stdin:
     tgtToks = tgt.split()
     
     newFeatList = []
-    # We actually need count0 indicators in conjunctions to distinguish them from lower order conjunctions
-    MIN = 0
 
-    nontermCount = sum(isNonterm(tok) for tok in srcToks)
-    if args.nontermFeats and nontermCount > MIN:
-        newFeatList.append("NontermCount_%d"%(nontermCount))
+    if args.brownUnigrams:
+        for tok in srcTerms:
+            cluster = srcBrown[tok]
+            newFeatList.append("SrcBrown_%s"%(cluster))
+        for tok in tgtTerms:
+            cluster = tgtBrown[tok]
+            newFeatList.append("TgtBrown_%s"%(cluster))
 
-    srcTerms = [tok for tok in srcToks if not isNonterm(tok)]
-    tgtTerms = [tok for tok in tgtToks if not isNonterm(tok)]
-
+    # Even though these would typically be integer features
+    # and then discretized, we add them here as indicators because
+    # 1) These's few enough of them that they would always receive separate bins
+    # 2) The src features are guaranteed to do nothing without conjunctions
+    # 3) The target features are equivalent to the word penalty without discretization
     if args.srcTermFeats:
         newFeatList.append("SrcTermCount_%d"%(len(srcTerms)))
     if args.tgtTermFeats:
         newFeatList.append("TgtTermCount_%d"%(len(tgtTerms)))
 
-    if args.srcHfwCounts:
-        srcHfwCount = sum(tok in srcHfwCountSet and not isPunct(tok) for tok in srcTerms)
-        if srcHfwCount > MIN: newFeatList.append("SrcHFWC_%d"%(srcHfwCount))
-    if args.tgtHfwCounts:
-        tgtHfwCount = sum(tok in tgtHfwCountSet and not isPunct(tok) for tok in tgtTerms)
-        if tgtHfwCount > MIN: newFeatList.append("TgtHFWC_%d"%(tgtHfwCount))
-
-    srcPuncCount = sum(isPunct(tok) for tok in srcTerms)
-    tgtPuncCount = sum(isPunct(tok) for tok in tgtTerms)
+    for link in align:
+        (i, j) = link.split('-')
+        i = int(i)
+        j = int(j)
+        srcWord = srcToks[i]
+        tgtWord = tgtToks[j]
+        if args.brownAligned:
+            srcCluster = srcBrown[srcWord]
+            tgtCluster = tgtBrown[tgtWord]
+            newFeatList.append("BrownAligned_%s_%s"%(srcCluster, tgtCluster))
+        if args.puncAligned:
+            srcPunc = "SrcPunc" if isPunct(srcWord) else "NotSrcPunc"
+            tgtPunc = "TgtPunc" if isPunct(tgtWord) else "NotTgtPunc"
+            newFeatList.append("%s_Aligned_%s"%(srcPunc, tgtPunc))
 
     srcLexFeats = []
     tgtLexFeats = []
-    if args.srcHfwLex:
+    if args.hfwLex:
         srcLexFeats = ["SrcHFW_%s"%tok for tok in srcTerms if tok in srcHfwLexSet]
-    if args.tgtHfwLex:
         tgtLexFeats = ["TgtHFW_%s"%tok for tok in tgtTerms if tok in tgtHfwLexSet]
     lexFeats = srcLexFeats + tgtLexFeats
-
-    # XXX: Unused
-    def conjoin(featList):
-        result = []
-        seedFeatList = list(featList)
-        # Only do complex versions so that we don't have to worry about MIN
-        #for r in range(2, min(len(seedFeatList), MAX_CONJS)+1):
-        r = args.conjoin
-        for combo in itertools.combinations(seedFeatList, r):
-            result.append('_'.join(combo))
-        return result
-    
-    if args.conjoin >= 2:
-        #newFeatList += conjoin(newFeatList)
-        if srcHfwCount > 0 or tgtHfwCount > 0:
-            if args.srcHfwCounts and args.tgtHfwCounts:
-                newFeatList.append("SrcHFWC_%d_TgtHFWC_%d"%(srcHfwCount, tgtHfwCount))
-                if args.conjoin >= 3 and args.nontermFeats:
-                    newFeatList.append("NontermCount_%d_SrcHFWC_%d_TgtHFWC_%d"%(nontermCount, srcHfwCount, tgtHfwCount))
-        if len(srcTerms) > 0 or len(tgtTerms) > 0:
-            if args.lenFeats:
-                newFeatList.append("SrcWC_%d_TgtWC_%d"%(len(srcTerms), len(tgtTerms)))
-                if args.conjoin >= 3 and args.nontermFeats:
-                    newFeatList.append("NontermCount_%d_SrcWC_%d_TgtWC_%d"%(nontermCount, len(srcTerms), len(tgtTerms)))
-                if srcHfwCount > 0 or tgtHfwCount > 0:
-                    if args.conjoin >= 4 and args.srcHfwCounts and args.tgtHfwCounts:
-                        newFeatList.append("SrcWC_%d_TgtWC_%d_SrcHFWC_%d_TgtHFWC_%d"%(len(srcTerms), len(tgtTerms), srcHfwCount, tgtHfwCount))
-                        if args.conjoin >= 5 and args.nontermFeats:
-                            newFeatList.append("NontermCount_%d_SrcWC_%d_TgtWC_%d_SrcHFWC_%d_TgtHFWC_%d"%(nontermCount, len(srcTerms), len(tgtTerms), srcHfwCount, tgtHfwCount))
-
-        if args.srcHfwLex and args.tgtHfwLex:
-            for srcFeat in srcLexFeats:
-                for tgtFeat in tgtLexFeats:
-                    lexFeats.append("%s_%s"%(srcFeat,tgtFeat))
                 
     feats += ' ' + ' '.join([name+"=1" for name in newFeatList+lexFeats])
     feats = escapeFeat(feats)
