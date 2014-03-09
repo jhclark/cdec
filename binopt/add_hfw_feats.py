@@ -89,6 +89,9 @@ for line in sys.stdin:
     
     newFeatList = []
 
+    srcTerms = [tok for tok in srcToks if not isNonterm(tok)]
+    tgtTerms = [tok for tok in tgtToks if not isNonterm(tok)]
+
     if args.brownUnigrams:
         for tok in srcTerms:
             cluster = srcBrown[tok]
