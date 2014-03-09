@@ -28,8 +28,8 @@ parser.add_argument('--srcTermFeats', help='Use source terminal count (phrase le
 parser.add_argument('--tgtTermFeats', help='Use source terminal count (phrase length) integer features (number of terminals)', action='store_true')
 
 ### Rule-level features ###
-parser.add_argument('--srcBrownPaths', help='Source brown clusters paths file (cluster, word, freq)', action='store_true')
-parser.add_argument('--tgtBrownPaths', help='Target brown clusters paths file (cluster, word, freq)', action='store_true')
+parser.add_argument('--srcBrownPaths', help='Source brown clusters paths file (cluster, word, freq)')
+parser.add_argument('--tgtBrownPaths', help='Target brown clusters paths file (cluster, word, freq)')
 parser.add_argument('--brownUnigrams', help='Emit brown unigram indicators', action='store_true') ###
 
 ### Alignment-level conjunctions ###
@@ -58,7 +58,7 @@ if args.srcHfwFile:
     srcHfwLexSet = set(srcHfwList[:args.srcHfwLex])
 
 if args.tgtHfwFile:
-    tgytHfwList = []
+    tgtHfwList = []
     for line in codecs.open(args.tgytHfwFile, 'r', 'utf-8'):
         (word, freq) = line.split()
         tgytHfwList.append(word)
