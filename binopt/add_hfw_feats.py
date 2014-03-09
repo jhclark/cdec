@@ -67,13 +67,15 @@ if args.tgtHfwFile:
 if args.srcBrownPaths:
     srcBrown = dict()
     for line in codecs.open(args.srcBrownPaths, 'r' ,'utf-8'):
-        (cluster, word, xx) = line.split()
+        print >>sys.stderr, "srcBrown:", line
+        (cluster, word, xx) = line.split('\t')
         srcBrown[word] = cluster
 
 if args.tgtBrownPaths:
     tgtBrown = dict()
     for line in codecs.open(args.tgtBrownPaths, 'r' ,'utf-8'):
-        (cluster, word, xx) = line.split()
+        print >>sys.stderr, "tgtBrown:", line
+        (cluster, word, xx) = line.split('\t')
         tgtBrown[word] = cluster
 
 def isPunct(tok): return all([ unicodedata.category(c) == 'P' for c in tok ])
