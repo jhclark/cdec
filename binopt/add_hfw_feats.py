@@ -52,30 +52,31 @@ sys.stderr = codecs.getwriter('utf-8')(sys.stderr)
 
 if args.srcHfwFile:
     srcHfwList = []
-    for line in codecs.open(args.srcHfwFile, 'r', 'utf-8'):
-        (word, freq) = line.split()
+    for line in open(args.srcHfwFile, 'r'):
+        (word, freq) = line.decode('utf-8').strip().split()
         srcHfwList.append(word)
     srcHfwLexSet = set(srcHfwList[:args.srcHfwLex])
 
 if args.tgtHfwFile:
     tgtHfwList = []
-    for line in codecs.open(args.tgytHfwFile, 'r', 'utf-8'):
-        (word, freq) = line.split()
+    for line in open(args.tgytHfwFile, 'r'):
+        (word, freq) = line.decode('utf-8').strip().split()
         tgytHfwList.append(word)
     tgytHfwLexSet = set(tgytHfwList[:args.tgytHfwLex])
 
 if args.srcBrownPaths:
     srcBrown = dict()
-    for line in codecs.open(args.srcBrownPaths, 'r' ,'utf-8'):
-        print >>sys.stderr, "srcBrown:", line
-        (cluster, word, xx) = line.split('\t')
+    i = 0
+    for line in open(args.srcBrownPaths, 'r'):
+        cols = line.decode('utf-8').strip().split('\t')
+        (cluster, word, xx) = cols
         srcBrown[word] = cluster
+        i += 1
 
 if args.tgtBrownPaths:
     tgtBrown = dict()
-    for line in codecs.open(args.tgtBrownPaths, 'r' ,'utf-8'):
-        print >>sys.stderr, "tgtBrown:", line
-        (cluster, word, xx) = line.split('\t')
+    for line in open(args.tgtBrownPaths, 'r'):
+        (cluster, word, xx) = line.decode('utf-8').strip().split('\t')
         tgtBrown[word] = cluster
 
 def isPunct(tok): return all([ unicodedata.category(c) == 'P' for c in tok ])
@@ -112,7 +113,10 @@ for line in sys.stdin:
     if args.tgtTermFeats:
         newFeatList.append("TgtTermCount_%d"%(len(tgtTerms)))
 
-    for link in align:
+    for link in align.split():
+        link = link.strip()
+        if not link:
+            continue
         (i, j) = link.split('-')
         i = int(i)
         j = int(j)
