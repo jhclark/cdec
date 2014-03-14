@@ -92,6 +92,10 @@ for line in sys.stdin:
     
     newFeatList = []
 
+    if len(srcToks) == 0 or len(tgtToks) == 0:
+        print >>sys.stderr, "IGNORING BROKEN LINE:",line.strip()
+        continue
+
     srcTerms = [tok for tok in srcToks if not isNonterm(tok)]
     tgtTerms = [tok for tok in tgtToks if not isNonterm(tok)]
 
@@ -120,8 +124,12 @@ for line in sys.stdin:
         (i, j) = link.split('-')
         i = int(i)
         j = int(j)
-        srcWord = srcToks[i]
-        tgtWord = tgtToks[j]
+        try:
+            srcWord = srcToks[i]
+            tgtWord = tgtToks[j]
+        except:
+            print >>sys.stderr, "ERROR in line:",line.strip()
+            raise
         if args.brownAligned:
             srcCluster = srcBrown[srcWord]
             tgtCluster = tgtBrown[tgtWord]
