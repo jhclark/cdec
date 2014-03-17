@@ -127,14 +127,14 @@ for line in sys.stdin:
             j = int(j)
             srcWord = srcToks[i]
             tgtWord = tgtToks[j]
-        if args.brownAligned:
-            srcCluster = srcBrown[srcWord]
-            tgtCluster = tgtBrown[tgtWord]
-            newFeatList.append("BrownAligned_%s_%s"%(srcCluster, tgtCluster))
-        if args.puncAligned:
-            srcPunc = "SrcPunc" if isPunct(srcWord) else "NotSrcPunc"
-            tgtPunc = "TgtPunc" if isPunct(tgtWord) else "NotTgtPunc"
-            newFeatList.append("%s_Aligned_%s"%(srcPunc, tgtPunc))
+            if args.brownAligned:
+                srcCluster = srcBrown[srcWord]
+                tgtCluster = tgtBrown[tgtWord]
+                newFeatList.append("BrownAligned_%s_%s"%(srcCluster, tgtCluster))
+            if args.puncAligned:
+                srcPunc = "SrcPunc" if isPunct(srcWord) else "NotSrcPunc"
+                tgtPunc = "TgtPunc" if isPunct(tgtWord) else "NotTgtPunc"
+                newFeatList.append("%s_Aligned_%s"%(srcPunc, tgtPunc))
         except:
             print >>sys.stderr, "IGNORING ERROR in line:",line.strip(), "LINK:",link, "(Features for this link will not be added)"
 
