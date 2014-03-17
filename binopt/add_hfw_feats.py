@@ -118,18 +118,15 @@ for line in sys.stdin:
         newFeatList.append("TgtTermCount_%d"%(len(tgtTerms)))
 
     for link in align.split():
-        link = link.strip()
-        if not link:
-            continue
-        (i, j) = link.split('-')
-        i = int(i)
-        j = int(j)
         try:
+            link = link.strip()
+            if not link:
+                continue
+            (i, j) = link.split('-')
+            i = int(i)
+            j = int(j)
             srcWord = srcToks[i]
             tgtWord = tgtToks[j]
-        except:
-            print >>sys.stderr, "ERROR in line:",line.strip()
-            raise
         if args.brownAligned:
             srcCluster = srcBrown[srcWord]
             tgtCluster = tgtBrown[tgtWord]
@@ -138,6 +135,8 @@ for line in sys.stdin:
             srcPunc = "SrcPunc" if isPunct(srcWord) else "NotSrcPunc"
             tgtPunc = "TgtPunc" if isPunct(tgtWord) else "NotTgtPunc"
             newFeatList.append("%s_Aligned_%s"%(srcPunc, tgtPunc))
+        except:
+            print >>sys.stderr, "IGNORING ERROR in line:",line.strip(), "LINK:",link, "(Features for this link will not be added)"
 
     srcLexFeats = []
     tgtLexFeats = []
