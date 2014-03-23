@@ -165,6 +165,9 @@ class FastSparseVector {
   inline T& add_value(int k, const T& v) {
     return get_or_create_bin(k) += v;
   }
+  inline T at(int k) const {
+    return value(k);
+  }
   inline T get(int k) const {
     return value(k);
   }

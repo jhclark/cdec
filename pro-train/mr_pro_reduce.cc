@@ -120,7 +120,7 @@ double ApplyRegularizationTerms(const double C,
                                 const vector<weight_t>& prev_weights,
 				const vector<weight_t>& feat_reg,
                                 const double graph_reg_C,
-                                const vector<vector<weight_t> >& graph_reg_matrix,
+                                const vector<SparseVector<weight_t> >& graph_reg_matrix,
                                 const vector<LineFeatureGroup>& lines,
                                 const bool regularize_by_group,
                                 vector<weight_t>* g) {
@@ -301,7 +301,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
                        const vector<weight_t>& prev_x,
 		       const vector<weight_t>& feat_reg,
                        const double graph_reg_C,
-                       const vector<vector<weight_t> >& graph_reg_matrix,
+                       const vector<SparseVector<weight_t> >& graph_reg_matrix,
                        const vector<LineFeatureGroup>& lines,
                        const bool regularize_by_group,
                        int dominant_feat_id,
@@ -411,9 +411,9 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
 // this is used for reading the precision matrix in graph regularization
 // note: this code is ripped off from Weights::InitFromFile, but contains some non-trivial changes
 void ReadFeatMatrix(const string& filename,
-                    vector<vector<weight_t> >* pweights) {
+                    vector<SparseVector<weight_t> >* pweights) {
 
-  vector<vector<weight_t> >& weights = *pweights;
+  vector<SparseVector<weight_t> >& weights = *pweights;
   if (!SILENT) cerr << "Reading feature matrix from " << filename << endl;
   ReadFile in_file(filename);
   istream& in = *in_file.stream();
@@ -462,13 +462,16 @@ void ReadFeatMatrix(const string& filename,
     if (weights.size() <= fid1) {
       weights.resize(fid1 + 1);
     }
+    /* SparseVector
     if (weights[fid1].size() <= fid2) {
       weights[fid1].resize(fid2 + 1);
     }
+    */
     max_feat = max<size_t>(max_feat, fid1);
     max_feat = max<size_t>(max_feat, fid2);
 
-    weights[fid1][fid2] = val;
+    SparseVector<weight_t>& inner_vec = weights[fid1];
+    inner_vec.set_value(fid2, val);
     ++weight_count;
     if (!SILENT) {
       if (weight_count %   50000 == 0) { cerr << '.' << flush; fl = true; }
@@ -540,19 +543,21 @@ void ReadTangentRegularizationFile(string filename, vector<LineFeatureGroup>* li
   }
 }
 
-void ResizeMatrix(const size_t size, vector<vector<weight_t> >* pweights) {
-  vector<vector<weight_t> >& weights = *pweights;
+void ResizeMatrix(const size_t size, vector<SparseVector<weight_t> >* pweights) {
+  vector<SparseVector<weight_t> >& weights = *pweights;
 
   // make the entire matrix square
   if (weights.size() < size) {
     weights.resize(size);
   }
+  /* SparseVector
   for (int i=0; i < weights.size(); ++i) {
     if (weights[i].size() < size) {
       weights[i].resize(size);
     }
   }
-  cerr << "Feature matrix dimensions are" << weights.size() << " x " << weights[0].size() << endl;
+  */
+  //cerr << "Feature matrix dimensions are " << weights.size() << " x " << weights[0].size() << " = " << (weights.size() * weights[0].size()) << endl;
 }
 
 
@@ -620,7 +625,7 @@ int main(int argc, char** argv) {
   // read additional feature pair regularization weights for graph regularization
   // pre-size the 2D vector at num_feats by num_feats
   // NOTE: Must do this *after* reading the corpus!
-  vector<vector<weight_t> > graph_reg_matrix(FD::NumFeats(), vector<weight_t>(FD::NumFeats()));
+  vector<SparseVector<weight_t> > graph_reg_matrix(FD::NumFeats(), SparseVector<weight_t>());
   if (conf.count("graph_regularization_file")) {
     ReadFeatMatrix(conf["graph_regularization_file"].as<string>(), &graph_reg_matrix);
     //cerr << "Read feature matrix:" << endl;
