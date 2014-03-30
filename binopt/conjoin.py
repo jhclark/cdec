@@ -13,7 +13,12 @@ for line in sys.stdin:
   # Conjoin
   for i in range(len(featList)):
     feat1 = featList[i]
-    result.append('='.join(feat1))
+    
+    # Don't append source-only "FullSrc*" features (see add_hfw_feats.py)
+    # unless it's already been conjoined (i.e. there's a __ in the feature name)
+    if not feat1[0].startswith("FullSrc") and not '__' in feat1[0]:
+      result.append('='.join(feat1))
+    
     for j in range(i):
       if i != j:
         feat2 = featList[j]

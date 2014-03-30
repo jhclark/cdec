@@ -1,9 +1,24 @@
-#!/usr/bin/env python
+trestles-10-13#!/usr/bin/env python
 import sys
 import unicodedata
 import codecs
 import itertools
 import argparse
+
+# TODO: What is our solution for doing conjunctions on different feature scopes:
+# 1) Word-in-source-sentence (union -- not add -- with each phrase?)
+# 2) Word-in-phrase (source-word-in-phrase is known at phrase segmentation time)
+# 3) Alignment-in-phrase (subset of phrase)
+# 4) Phrase
+# We punt on feature that depend on multiple segments (phrases) such
+# as the LM or conjoined word-boundary features
+
+# FULL SOURCE FEATURES:
+# All features that use the full source sentence
+# must begin with "FullSrc" since conjoin.py
+# will remove any of these features that aren't conjoined
+# Why? Because these features may have an effect on the phrase
+# segmentation otherwise.
 
 # Adds extra features to an **already discretized** grammar
 # Nonterminal count
@@ -18,6 +33,9 @@ import argparse
 #       be dropped).
 
 parser = argparse.ArgumentParser(description='Add extra features such as High Frequency Word Counts')
+
+parser.add_argument('--srcSentsFile', help='Source sentences file (we will read one of these)')
+parser.add_argument('--srcSentIdx', type=int, help='Zero-based index of the source sentence in the file')
 
 parser.add_argument('--srcHfwFile', help='Source high frequency words file')
 parser.add_argument('--tgtHfwFile', help='Target high frequency words file')
@@ -49,6 +67,15 @@ args = parser.parse_args()
 sys.stdin = codecs.getreader('utf-8')(sys.stdin)
 sys.stdout = codecs.getwriter('utf-8')(sys.stdout)
 sys.stderr = codecs.getwriter('utf-8')(sys.stderr)
+
+if args.srcSentsFile:
+    srcSents = []
+    for line in open(args.srcSentsFile, 'r'):
+        sent = line.decode('utf-8').strip()
+        srcSents.append(sent)
+    srcSent = srcSents[srcSentIdx]
+else:
+    srcSent = ''
 
 if args.srcHfwFile:
     srcHfwList = []
@@ -86,21 +113,35 @@ def escapeFeat(name): return name.replace(';','SEMI')
 for line in sys.stdin:
     while not line.endswith('\n'):
         line += sys.stdin.next() # don't break lines on special unicode markers
-    (lhs, src, tgt, feats, align) = line.strip("\n").split(' ||| ')
-    srcToks = src.split()
+    (lhs, phrSrc, tgt, feats, align) = line.strip("\n").split(' ||| ')
+
+    allSrcToks = srcSent.split()
+    phrSrcToks = phrSrc.split()
     tgtToks = tgt.split()
     
     newFeatList = []
 
-    if len(srcToks) == 0 or len(tgtToks) == 0:
+    if len(phrSrcToks) == 0 or len(tgtToks) == 0:
         print >>sys.stderr, "IGNORING BROKEN LINE:",line.strip()
         continue
 
-    srcTerms = [tok for tok in srcToks if not isNonterm(tok)]
+    phrSrcTerms = [tok for tok in phrSrcToks if not isNonterm(tok)]
     tgtTerms = [tok for tok in tgtToks if not isNonterm(tok)]
 
     if args.brownUnigrams:
-        for tok in srcTerms:
+        # This will do nothing if --srcSent was not passed in
+        # (allSrcToks will have length zero)
+        for tok in allSrcToks:
+            # Conundrum: We only want these features to fire once per sentence
+            # (such that they won't have any effect on their own)
+            # but they will possibly be useful when conjoined with other features
+            # However, if we add them to every grammar rule, they could act
+            # as a proxy for rule count and interact with the hidden segmentation variable
+            #
+            # We solve this by removing any unconjoined FullSrc* features in conjoin.py
+            cluster = srcBrown[tok]
+            newFeatList.append("FullSrcBrown_%s"%(cluster))
+        for tok in phrSrcTerms:
             cluster = srcBrown[tok]
             newFeatList.append("SrcBrown_%s"%(cluster))
         for tok in tgtTerms:
@@ -113,7 +154,7 @@ for line in sys.stdin:
     # 2) The src features are guaranteed to do nothing without conjunctions
     # 3) The target features are equivalent to the word penalty without discretization
     if args.srcTermFeats:
-        newFeatList.append("SrcTermCount_%d"%(len(srcTerms)))
+        newFeatList.append("SrcTermCount_%d"%(len(phrSrcTerms)))
     if args.tgtTermFeats:
         newFeatList.append("TgtTermCount_%d"%(len(tgtTerms)))
 
@@ -125,28 +166,28 @@ for line in sys.stdin:
             (i, j) = link.split('-')
             i = int(i)
             j = int(j)
-            srcWord = srcToks[i]
+            phrSrcWord = phrSrcToks[i]
             tgtWord = tgtToks[j]
             if args.brownAligned:
-                srcCluster = srcBrown[srcWord]
+                phrSrcCluster = srcBrown[phrSrcWord]
                 tgtCluster = tgtBrown[tgtWord]
-                newFeatList.append("BrownAligned_%s_%s"%(srcCluster, tgtCluster))
+                newFeatList.append("BrownAligned_%s_%s"%(phrSrcCluster, tgtCluster))
             if args.puncAligned:
-                srcPunc = "SrcPunc" if isPunct(srcWord) else "NotSrcPunc"
+                srcPunc = "SrcPunc" if isPunct(phrSrcWord) else "NotSrcPunc"
                 tgtPunc = "TgtPunc" if isPunct(tgtWord) else "NotTgtPunc"
                 newFeatList.append("%s_Aligned_%s"%(srcPunc, tgtPunc))
         except:
             print >>sys.stderr, "IGNORING ERROR in line:",line.strip(), "LINK:",link, "(Features for this link will not be added)"
 
-    srcLexFeats = []
+    phrSrcLexFeats = []
     tgtLexFeats = []
     if args.hfwLex:
-        srcLexFeats = ["SrcHFW_%s"%tok for tok in srcTerms if tok in srcHfwLexSet]
+        phrSrcLexFeats = ["SrcHFW_%s"%tok for tok in phrSrcTerms if tok in srcHfwLexSet]
         tgtLexFeats = ["TgtHFW_%s"%tok for tok in tgtTerms if tok in tgtHfwLexSet]
-    lexFeats = srcLexFeats + tgtLexFeats
+    lexFeats = phrSrcLexFeats + tgtLexFeats
                 
     feats += ' ' + ' '.join([name+"=1" for name in newFeatList+lexFeats])
     feats = escapeFeat(feats)
-    print ' ||| '.join([lhs, src, tgt, feats, align])
+    print ' ||| '.join([lhs, phrSrc, tgt, feats, align])
     
 
