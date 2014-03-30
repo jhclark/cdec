@@ -16,7 +16,9 @@ for line in sys.stdin:
     
     # Don't append source-only "FullSrc*" features (see add_hfw_feats.py)
     # unless it's already been conjoined (i.e. there's a __ in the feature name)
-    if not feat1[0].startswith("FullSrc") and not '__' in feat1[0]:
+    isUnconjoinedFullSrc = feat1[0].startswith("FullSrc") and not '__' in feat1[0]
+    isAlignedFeat = 'Aligned' in feat1[0]
+    if not isUnconjoinedFullSrc and not isAlignedFeat:
       result.append('='.join(feat1))
     
     for j in range(i):
