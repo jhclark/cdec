@@ -1,4 +1,4 @@
-trestles-10-13#!/usr/bin/env python
+#!/usr/bin/env python
 import sys
 import unicodedata
 import codecs
