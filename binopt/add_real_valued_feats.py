@@ -58,48 +58,48 @@ for line in sys.stdin:
 
     nontermCount = sum(isNonterm(tok) for tok in srcToks)
     if args.nontermFeats:
-        newFeatList.append("NontermCount_%d"%(nontermCount))
+        newFeatList.append("NontermCount=%d"%(nontermCount))
 
     srcTerms = [tok for tok in srcToks if not isNonterm(tok)]
     tgtTerms = [tok for tok in tgtToks if not isNonterm(tok)]
 
     if args.hfwCounts:
         srcHfwCount = sum( (tok in srcHfwCountSet and not isPunct(tok)) for tok in srcTerms)
-        newFeatList.append("SrcHFWC_%d"%(srcHfwCount))
+        newFeatList.append("SrcHFWC=%d"%(srcHfwCount))
         tgtHfwCount = sum( (tok in tgtHfwCountSet and not isPunct(tok)) for tok in tgtTerms)
-        newFeatList.append("TgtHFWC_%d"%(tgtHfwCount))
+        newFeatList.append("TgtHFWC=%d"%(tgtHfwCount))
 
     if args.minWordFreq:
         c = min(srcFreq[tok] for tok in srcTerms)
-        newFeatList.append("SrcMinWordFreq_%d"%(c))
+        newFeatList.append("SrcMinWordFreq=%d"%(c))
         c = min(tgtFreq[tok] for tok in tgtTerms)
-        newFeatList.append("TgtMinWordFreq_%d"%(c))
+        newFeatList.append("TgtMinWordFreq=%d"%(c))
 
     if args.maxWordFreq:
         c = max(srcFreq[tok] for tok in srcTerms)
-        newFeatList.append("SrcMaxWordFreq_%d"%(c))
+        newFeatList.append("SrcMaxWordFreq=%d"%(c))
         c = max(tgtFreq[tok] for tok in tgtTerms)
-        newFeatList.append("TgtMaxWordFreq_%d"%(c))
+        newFeatList.append("TgtMaxWordFreq=%d"%(c))
 
     if args.wordFreqs:
         for tok in srcTerms:
-            newFeatList.append("SrcWordFreq_%d"%(srcFreq[tok]))
+            newFeatList.append("SrcWordFreq=%d"%(srcFreq[tok]))
         for tok in tgtTerms:
-            newFeatList.append("TgtWordFreq_%d"%(tgtFreq[tok]))
+            newFeatList.append("TgtWordFreq=%d"%(tgtFreq[tok]))
 
     if args.phraseCharLen:
         srcChars = sum( len(tok) for tok in srcTerms )
-        newFeatList.append("SrcRuleTermChars_%d"%(srcChars))
+        newFeatList.append("SrcRuleTermChars=%d"%(srcChars))
         tgtChars = sum( len(tok) for tok in tgtTerms )
-        newFeatList.append("TgtRuleTermChars_%d"%(tgtChars))
+        newFeatList.append("TgtRuleTermChars=%d"%(tgtChars))
 
     if args.puncCount:
         srcPuncCount = sum(isPunct(tok) for tok in srcTerms)
-        newFeatList.append("SrcPuncTokCount_%d"%(srcPuncCount))
+        newFeatList.append("SrcPuncTokCount=%d"%(srcPuncCount))
         tgtPuncCount = sum(isPunct(tok) for tok in tgtTerms)
-        newFeatList.append("TgtPuncTokCount_%d"%(tgtPuncCount))
+        newFeatList.append("TgtPuncTokCount=%d"%(tgtPuncCount))
 
-    feats += ' ' + ' '.join([name+"=1" for name in newFeatList])
+    feats += ' ' + ' '.join(newFeatList)
     feats = escapeFeat(feats)
     print ' ||| '.join([lhs, src, tgt, feats, align])
     
