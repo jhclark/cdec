@@ -84,6 +84,8 @@ my $dominant_feat = ""; # the name of a single feature that should receive much 
 my $prune_kbest_by_length_hammer = 0; # Remove k-best entries with non-zero length hammer?
 my $regularize_by_group = 0; # evenly distribute basic L2 regularizer C over features instead of applying it individually to each feature?
 
+my $kbest_size = 1500;
+
 # Process command-line options
 Getopt::Long::Configure("no_auto_abbrev");
 if (GetOptions(
@@ -105,6 +107,7 @@ if (GetOptions(
         "graph-reg-strength=s" => \$graph_reg_strength,
 	"tangent-reg-file=s" => \$tangent_reg_file,
 	"dominant-feat=s" => \$dominant_feat,
+	"kbest-size=s" => \$kbest_size,
 	"prune-kbest-by-length-hammer" => \$prune_kbest_by_length_hammer,
         "regularize-by-group" => \$regularize_by_group,
 	"reg-previous=f" => \$reg_previous,
@@ -377,7 +380,7 @@ while (1){
                     $kbest_hammer_flag = "--prune_kbest_by_length_hammer 1";
                 }
 
-		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest $kbest_hammer_flag < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
+		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest -k $kbest_size $kbest_hammer_flag < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
 		if ($use_make) {
 			my $script_file = "$dir/scripts/map.$shard";
 			open F, ">$script_file" or die "Can't write $script_file: $!";
@@ -517,6 +520,10 @@ while (1){
             # TODO: HACK: XXX: Hardcoded path to parallel bzip (several fold faster than single threaded bzip)
             check_bash_call("tar -c splag.$im1 | /home/jhclark/software/pbzip2-1.1.6/pbzip2 -c > splag.$im1.bz2");
             `rm -rf splag.$im1`;
+            # TODO: HACK: Move these files off the SDD and back to a filesystem with more free space
+            ###if (defined $ENV{'swork'}) {
+            ###    check_bash_call("mv splag.$im1.bz2 $ENV{'swork'}/");
+            ###}
         }
 
 	$lastPScore = $score;
