@@ -33,6 +33,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
   opts.add_options()
         ("weights,w", po::value<string>(), "Weights from previous iteration (used as initialization and interpolation")
         ("regularization_strength,C",po::value<double>()->default_value(500.0), "l2 regularization strength")
+        ("conjunction_regularization_strength,c",po::value<double>()->default_value(0.0), "l2 regularization strength applied only to conjoined features (any feature that contains a double underscore)")
         ("normalize_regularizer,n", po::bool_switch()->default_value(false), "Normalize regularization constant C by the number of features")
         ("graph_regularization_strength,G",po::value<double>()->default_value(500.0), "l2 regularization strength for graph regularizer")
         ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C; this line means 'feat1 is penalized for being dissimilar from feat2 proportional to weight')")
@@ -656,6 +657,17 @@ int main(int argc, char** argv) {
   // make sure new regularizers have consistent dimensions
   feat_reg.resize(FD::NumFeats());
   ResizeMatrix(FD::NumFeats(), &graph_reg_matrix);
+
+  // set regularization strength for conjoined features
+  // now that we've enumerated all features in our corpus
+  double C_conj = conf["conjunction_regularization_strength"].as<double>();
+  for (int i = 0; i < FD::NumFeats(); i++) {
+    string feat_name = FD::Convert(i);
+    if (feat_name.find("__") != string::npos) {
+      cerr << "Applying conjunction regularization to feature " << feat_name << " with strength " << C_conj << endl;
+      feat_reg[i] += C_conj;
+    }
+  }
 
   double tppl = 0.0;
   vector<pair<double,double> > sp;

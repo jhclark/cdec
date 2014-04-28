@@ -74,6 +74,7 @@ my $uniq_feats_file;
 # regularization strength
 my $tune_regularizer = 0;
 my $reg = 500;
+my $conj_reg = 0;
 my $norm_reg=0; # normalize regularizer C by the number of active features in the PRO exemplar corpus
 my $reg_previous = 5000;
 my $feat_reg_file = "";
@@ -101,6 +102,7 @@ if (GetOptions(
         "weights=s" => \$initial_weights,
 	"tune-regularizer" => \$tune_regularizer,
 	"reg=f" => \$reg,
+	"conj-reg=f" => \$conj_reg,
 	"norm-reg" => \$norm_reg,
       	"feat-reg-file=s" => \$feat_reg_file,
 	"graph-reg-file=s" => \$graph_reg_file,
@@ -466,7 +468,7 @@ while (1){
 
 	print STDERR "\nRUNNING CLASSIFIER (REDUCER)\n";
 	print STDERR unchecked_output("date");
-	$cmd="cat @dev_outs | $REDUCER -w $dir/weights.$im1 -C $reg -y $reg_previous --interpolate_with_weights $psi";
+	$cmd="cat @dev_outs | $REDUCER -w $dir/weights.$im1 -C $reg -c $conj_reg -y $reg_previous --interpolate_with_weights $psi";
 	if ($tune_regularizer) {
 	   $cmd .= " -T -t $dev_test_file";
 	}
