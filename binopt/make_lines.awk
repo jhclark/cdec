@@ -10,6 +10,7 @@ BEGIN {
   first=1
 # Use a *very* strong regularization penalty on this one since we should be very precisely penalizing bad things
   #C=5000000
+  #C_conj=500000
   windowSize=1
   writeConjunctions=1
 
@@ -64,7 +65,7 @@ END {
             for (j = 1; j <= featArrayLens[i]; j++) {
                 binFeat1 = featArray[i,j]
                 for (ii = 1; ii < i; ii++) {
-                    printf C" "windowSize
+                    printf C_conj" "windowSize
                     for (jj = 1; jj <= featArrayLens[ii]; jj++) {
                         binFeat2 = featArray[ii,jj]
                         printf " "binFeat1"__"binFeat2
