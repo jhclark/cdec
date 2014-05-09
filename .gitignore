@@ -195,4 +195,3 @@ gi/pf/condnaive
 mteval/scorer_test
 phrasinator/gibbs_train_plm
 phrasinator/gibbs_train_plm_notables
-.*
