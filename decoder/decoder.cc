@@ -101,7 +101,7 @@ inline string str(char const* name,po::variables_map const& conf) {
 
 // print just the --long_opt names suitable for bash compgen
 inline void print_options(std::ostream &out,po::options_description const& opts) {
-  typedef std::vector< shared_ptr<po::option_description> > Ds;
+  typedef std::vector< boost::shared_ptr<po::option_description> > Ds;
   Ds const& ds=opts.options();
   out << '"';
   for (unsigned i=0;i<ds.size();++i) {
@@ -120,13 +120,13 @@ inline bool store_conf(po::variables_map const& conf,std::string const& name,V *
   return false;
 }
 
-inline shared_ptr<FeatureFunction> make_ff(string const& ffp,bool verbose_feature_functions,char const* pre="") {
+inline boost::shared_ptr<FeatureFunction> make_ff(string const& ffp,bool verbose_feature_functions,char const* pre="") {
   string ff, param;
   SplitCommandAndParam(ffp, &ff, &param);
   cerr << pre << "feature: " << ff;
   if (param.size() > 0) cerr << " (with config parameters '" << param << "')\n";
   else cerr << " (no config parameters)\n";
-  shared_ptr<FeatureFunction> pf = ff_registry.Create(ff, param);
+  boost::shared_ptr<FeatureFunction> pf = ff_registry.Create(ff, param);
   if (!pf) exit(1);
   int nbyte=pf->NumBytesContext();
   if (verbose_feature_functions)
@@ -135,13 +135,13 @@ inline shared_ptr<FeatureFunction> make_ff(string const& ffp,bool verbose_featur
 }
 
 #ifdef FSA_RESCORING
-inline shared_ptr<FsaFeatureFunction> make_fsa_ff(string const& ffp,bool verbose_feature_functions,char const* pre="") {
+inline boost::shared_ptr<FsaFeatureFunction> make_fsa_ff(string const& ffp,bool verbose_feature_functions,char const* pre="") {
   string ff, param;
   SplitCommandAndParam(ffp, &ff, &param);
   cerr << "FSA Feature: " << ff;
   if (param.size() > 0) cerr << " (with config parameters '" << param << "')\n";
   else cerr << " (no config parameters)\n";
-  shared_ptr<FsaFeatureFunction> pf = fsa_ff_registry.Create(ff, param);
+  boost::shared_ptr<FsaFeatureFunction> pf = fsa_ff_registry.Create(ff, param);
   if (!pf) exit(1);
   if (verbose_feature_functions)
     cerr<<"State is "<<pf->state_bytes()<<" bytes for "<<pre<<"feature "<<ffp<<endl;
@@ -156,10 +156,10 @@ inline shared_ptr<FsaFeatureFunction> make_fsa_ff(string const& ffp,bool verbose
 // passes are carried over into subsequent passes (where they may have different weights).
 struct RescoringPass {
   RescoringPass() : fid_summary(), density_prune(), beam_prune() {}
-  shared_ptr<ModelSet> models;
-  shared_ptr<IntersectionConfiguration> inter_conf;
+  boost::shared_ptr<ModelSet> models;
+  boost::shared_ptr<IntersectionConfiguration> inter_conf;
   vector<const FeatureFunction*> ffs;
-  shared_ptr<vector<weight_t> > weight_vector;
+  boost::shared_ptr<vector<weight_t> > weight_vector;
   int fid_summary;            // 0 == no summary feature
   double density_prune;       // 0 == don't density prune
   double beam_prune;          // 0 == don't beam prune
@@ -293,15 +293,15 @@ struct DecoderImpl {
   po::variables_map& conf;
   OracleBleu oracle;
   string formalism;
-  shared_ptr<Translator> translator;
-  shared_ptr<vector<weight_t> > init_weights; // weights used with initial parse
-  vector<shared_ptr<FeatureFunction> > pffs;
+  boost::shared_ptr<Translator> translator;
+  boost::shared_ptr<vector<weight_t> > init_weights; // weights used with initial parse
+  vector<boost::shared_ptr<FeatureFunction> > pffs;
 #ifdef FSA_RESCORING
   CFGOptions cfg_options;
-  vector<shared_ptr<FsaFeatureFunction> > fsa_ffs;
+  vector<boost::shared_ptr<FsaFeatureFunction> > fsa_ffs;
   vector<string> fsa_names;
 #endif
-  shared_ptr<RandomNumberGenerator<boost::mt19937> > rng;
+  boost::shared_ptr<RandomNumberGenerator<boost::mt19937> > rng;
   int sample_max_trans;
   bool aligner_mode;
   bool graphviz; 
@@ -310,7 +310,7 @@ struct DecoderImpl {
   bool kbest;
   bool unique_kbest;
   bool get_oracle_forest;
-  shared_ptr<WriteFile> extract_file;
+  boost::shared_ptr<WriteFile> extract_file;
   int combine_size;
   int sent_id;
   SparseVector<prob_t> acc_vec;  // accumulate gradient
@@ -622,7 +622,7 @@ DecoderImpl::DecoderImpl(po::variables_map& conf, int argc, char** argv, istream
   }
 
   // set up weight vectors since later phases may reuse weights from earlier phases
-  shared_ptr<vector<weight_t> > prev_weights = init_weights;
+  boost::shared_ptr<vector<weight_t> > prev_weights = init_weights;
   for (int pass = 0; pass < rescoring_passes.size(); ++pass) {
     RescoringPass& rp = rescoring_passes[pass];
     if (!rp.weight_vector) {
@@ -854,13 +854,13 @@ bool DecoderImpl::Decode(const string& input, DecoderObserver* o) {
     if (rp.fid_summary) {
       if (summary_feature_type == kEDGE_PROB) {
         const prob_t z = forest.PushWeightsToGoal(1.0);
-        if (!isfinite(log(z)) || isnan(log(z))) {
+        if (!isfinite(log(z)) || std::isnan(log(z))) {
           cerr << "  " << passtr << " !!! Invalid partition detected, abandoning.\n";
         } else {
           for (int i = 0; i < forest.edges_.size(); ++i) {
             const double log_prob_transition = log(forest.edges_[i].edge_prob_); // locally normalized by the edge
                                                                               // head node by forest.PushWeightsToGoal
-            if (!isfinite(log_prob_transition) || isnan(log_prob_transition)) {
+            if (!isfinite(log_prob_transition) || std::isnan(log_prob_transition)) {
               cerr << "Edge: i=" << i << " got bad inside prob: " << *forest.edges_[i].rule_ << endl;
               abort();
             }
@@ -872,7 +872,7 @@ bool DecoderImpl::Decode(const string& input, DecoderObserver* o) {
       } else if (summary_feature_type == kNODE_RISK) {
         Hypergraph::EdgeProbs posts;
         const prob_t z = forest.ComputeEdgePosteriors(1.0, &posts);
-        if (!isfinite(log(z)) || isnan(log(z))) {
+        if (!isfinite(log(z)) || std::isnan(log(z))) {
           cerr << "  " << passtr << " !!! Invalid partition detected, abandoning.\n";
         } else {
           for (int i = 0; i < forest.nodes_.size(); ++i) {
@@ -881,7 +881,7 @@ bool DecoderImpl::Decode(const string& input, DecoderObserver* o) {
             for (int j = 0; j < in_edges.size(); ++j)
               node_post += (posts[in_edges[j]] / z);
             const double log_np = log(node_post);
-            if (!isfinite(log_np) || isnan(log_np)) {
+            if (!isfinite(log_np) || std::isnan(log_np)) {
               cerr << "got bad posterior prob for node " << i << endl;
               abort();
             }
@@ -896,13 +896,13 @@ bool DecoderImpl::Decode(const string& input, DecoderObserver* o) {
       } else if (summary_feature_type == kEDGE_RISK) {
         Hypergraph::EdgeProbs posts;
         const prob_t z = forest.ComputeEdgePosteriors(1.0, &posts);
-        if (!isfinite(log(z)) || isnan(log(z))) {
+        if (!isfinite(log(z)) || std::isnan(log(z))) {
           cerr << "  " << passtr << " !!! Invalid partition detected, abandoning.\n";
         } else {
           assert(posts.size() == forest.edges_.size());
           for (int i = 0; i < posts.size(); ++i) {
             const double log_np = log(posts[i] / z);
-            if (!isfinite(log_np) || isnan(log_np)) {
+            if (!isfinite(log_np) || std::isnan(log_np)) {
               cerr << "got bad posterior prob for node " << i << endl;
               abort();
             }
@@ -1073,7 +1073,7 @@ bool DecoderImpl::Decode(const string& input, DecoderObserver* o) {
           cerr << "DIFF. ERR! log_z < log_ref_z: " << log_z << " " << log_ref_z << endl;
           exit(1);
         }
-        assert(!isnan(log_ref_z));
+        assert(!std::isnan(log_ref_z));
         ref_exp -= full_exp;
         acc_vec += ref_exp;
         acc_obj += (log_z - log_ref_z);

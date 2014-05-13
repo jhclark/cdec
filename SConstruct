@@ -18,19 +18,57 @@ AddOption('--efence', dest='efence', action='store_true',
 AddOption('--no-opt', dest='debug', action='store_true',
           help='turn off optimization so that we dont remove useful debugging information')
 
+# Use user's environment?
+import os
+
 platform = ARGUMENTS.get('OS', Platform())
 # Need vest for dtree
 include = Split('decoder utils klm mteval training vest .') #dtree
-env = Environment(PREFIX=GetOption('prefix'),
-                      PLATFORM = platform,
-#                      BINDIR = bin,
-#                      INCDIR = include,
-#                      LIBDIR = lib,
-                      CPPPATH = include,
-                      LIBPATH = [],
-                      LIBS = Split('boost_program_options boost_serialization boost_thread z'),
-#                      LINKFLAGS = "--static",
-		      CCFLAGS=Split('-g -DHAVE_SCONS --static -DJLM_REAL_VALUES'))
+env = Environment(ENV = os.environ, # Not very scons-like... just import the whole environment
+                  PREFIX=GetOption('prefix'),
+                  PLATFORM = platform,
+#                 BINDIR = bin,
+#                 INCDIR = include,
+#                 LIBDIR = lib,
+                  CPPPATH = include,
+                  LIBPATH = [],
+                  LIBS = Split('boost_program_options boost_serialization boost_thread z'),
+#                 LINKFLAGS = "--static",
+		  CCFLAGS=Split('-g -DHAVE_SCONS --static -DJLM_REAL_VALUES'),
+		  CXXFLAGS=Split('-std=c++11'))
+
+# ---- check for environment variables
+#if 'PATH' in os.environ:
+#    env.Replace(PATH = os.environ['PATH'])
+#    print(">> Using custom path " + os.environ['PATH'])
+
+#if 'LD_LIBRARY_PATH' in os.environ:
+#    env.Replace(LD_LIBRARY_PATH = os.environ['LD_LIBRARY_PATH'])
+#    print(">> Using custom library path " + os.environ['LD_LIBRARY_PATH'])
+
+#if 'CC' in os.environ:
+#    env.Replace(CC = os.environ['CC'])
+#    print(">> Using C compiler " + os.environ['CC'])
+
+#if 'CCFLAGS' in os.environ:
+#    env.Append(CCFLAGS = os.environ['CCFLAGS'])
+#    print(">> Appending custom CCFLAGS " + os.environ['CCFLAGS'])
+
+#if 'CXX' in os.environ:
+#    env.Replace(CXX = os.environ['CXX'])
+#    print(">> Using C++ compiler " + os.environ['CXX'])
+
+#if 'CXXFLAGS' in os.environ:
+#    env.Append(CCFLAGS = os.environ['CXXFLAGS'])
+#    print(">> Appending custom CXX flags: " + os.environ['CXXFLAGS'])
+    
+#if 'LDFLAGS' in os.environ:
+#    env.Append(LINKFLAGS = os.environ['LDFLAGS'])
+#    print(">> Appending custom link flags: " + os.environ['LDFLAGS'])
+
+## HACK for Trestles
+#env['CC'] = '/opt/gnu/gcc/bin/gcc'
+#env['CXX'] = '/opt/gnu/gcc/bin/g++'
 
 import os.path
 import shutil
@@ -57,6 +95,7 @@ conf = Configure(env, custom_tests = {'CheckBoost' : check_boost.CheckBoost})
 print('Checking if the environment is sane...')
 if not conf.CheckCXX():
     print('!! Your compiler and/or environment is not correctly configured (CXX not found).')
+    print('CXX is ' + env['CXX'])
     #Exit(1)
 if not conf.CheckFunc('printf'):
     print('!! Your compiler and/or environment is not correctly configured (printf unusable).')
@@ -67,6 +106,7 @@ boost = GetOption('boost')
 if boost:
    print 'Using Boost at {0}'.format(boost)
    env.Append(CCFLAGS='-DHAVE_BOOST',
+              LINKFLAGS=('-Wl,-rpath '+boost+'/lib').split(),
               CPPPATH=boost+'/include',
 	      LIBPATH=boost+'/lib')
 

@@ -40,14 +40,14 @@ TEST_F(OptTest, TestCheckNaN) {
   double x = 0;
   double y = 0;
   double z = x / y;
-  EXPECT_EQ(true, isnan(z));
+  EXPECT_EQ(true, std::isnan(z));
 }
 
 TEST_F(OptTest,TestConvexHull) {
-  shared_ptr<MERTPoint> a1(new MERTPoint(-1, 0));
-  shared_ptr<MERTPoint> b1(new MERTPoint(1, 0));
-  shared_ptr<MERTPoint> a2(new MERTPoint(-1, 1));
-  shared_ptr<MERTPoint> b2(new MERTPoint(1, -1));
+  boost::shared_ptr<MERTPoint> a1(new MERTPoint(-1, 0));
+  boost::shared_ptr<MERTPoint> b1(new MERTPoint(1, 0));
+  boost::shared_ptr<MERTPoint> a2(new MERTPoint(-1, 1));
+  boost::shared_ptr<MERTPoint> b2(new MERTPoint(1, -1));
   vector<shared_ptr<MERTPoint> > sa; sa.push_back(a1); sa.push_back(b1);
   vector<shared_ptr<MERTPoint> > sb; sb.push_back(a2); sb.push_back(b2);
   ConvexHull a(sa);

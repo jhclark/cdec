@@ -114,7 +114,7 @@ struct Edge {
   const Edge* const active_parent;    // back pointer, NULL for PREDICT items
   const Edge* const passive_parent;   // back pointer, NULL for SCAN and PREDICT items
   TRulePtr tps;   // translations
-  shared_ptr<SparseVector<double> > features; // features from CFG rule
+  boost::shared_ptr<SparseVector<double> > features; // features from CFG rule
 
   bool IsPassive() const {
     // when a rule is completed, this value will be set

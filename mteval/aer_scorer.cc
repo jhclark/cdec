@@ -54,7 +54,7 @@ class AERScore : public ScoreBase<AERScore> {
     const float prec = Precision();
     const float rec = Recall();
     const float f = (2.0 * prec * rec) / (rec + prec);
-    if (isnan(f)) return 1.0f;
+    if (std::isnan(f)) return 1.0f;
     return 1.0f - f;
   }
   virtual bool IsAdditiveIdentity() const {

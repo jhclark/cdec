@@ -8,6 +8,8 @@
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
 
+#include "pro-train/fast-oscar/fast_oscar.h"
+
 #include "stringlib.h"
 #include "filelib.h"
 #include "weights.h"
@@ -455,7 +457,7 @@ void ReadFeatMatrix(const string& filename,
     int weight_begin = end2;
     while(weight_begin < buf.size() && buf[weight_begin] == ' ') ++weight_begin;
     weight_t val = strtod(&buf.c_str()[weight_begin], NULL);
-    if (isnan(val)) {
+    if (std::isnan(val)) {
       cerr << FD::Convert(fid1) << " has weight NaN!\n";
       abort();
     }

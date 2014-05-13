@@ -22,7 +22,7 @@ void ComputeErrorSurface(const SegmentEvaluator& ss,
                          const EvaluationMetric* metric,
                          const Hypergraph& hg) {
   vector<WordID> prev_trans;
-  const vector<shared_ptr<MERTPoint> >& ienv = ve.GetSortedSegs();
+  const vector<boost::shared_ptr<MERTPoint> >& ienv = ve.GetSortedSegs();
   env->resize(ienv.size());
   SufficientStats prev_score; // defaults to 0
   int j = 0;

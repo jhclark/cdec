@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include <boost/shared_ptr.hpp>
+template <typename T> using shared_ptr = boost::shared_ptr<T>;
 #include <boost/program_options/variables_map.hpp>
 
 #include "weights.h"  // weight_t

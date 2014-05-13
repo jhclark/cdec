@@ -89,15 +89,15 @@ struct HypothesisInfo {
 };
 
 struct GoodBadOracle {
-  shared_ptr<HypothesisInfo> good;
-  shared_ptr<HypothesisInfo> bad;
+  boost::shared_ptr<HypothesisInfo> good;
+  boost::shared_ptr<HypothesisInfo> bad;
 };
 
 struct TrainingObserver : public DecoderObserver {
   TrainingObserver(const int k, const DocScorer& d, bool sf, vector<GoodBadOracle>* o) : ds(d), oracles(*o), kbest_size(k), sample_forest(sf) {}
   const DocScorer& ds;
   vector<GoodBadOracle>& oracles;
-  shared_ptr<HypothesisInfo> cur_best;
+  boost::shared_ptr<HypothesisInfo> cur_best;
   const int kbest_size;
   const bool sample_forest;
 
@@ -109,16 +109,16 @@ struct TrainingObserver : public DecoderObserver {
     UpdateOracles(smeta.GetSentenceID(), *hg);
   }
 
-  shared_ptr<HypothesisInfo> MakeHypothesisInfo(const SparseVector<double>& feats, const double score) {
-    shared_ptr<HypothesisInfo> h(new HypothesisInfo);
+  boost::shared_ptr<HypothesisInfo> MakeHypothesisInfo(const SparseVector<double>& feats, const double score) {
+    boost::shared_ptr<HypothesisInfo> h(new HypothesisInfo);
     h->features = feats;
     h->mt_metric = score;
     return h;
   }
 
   void UpdateOracles(int sent_id, const Hypergraph& forest) {
-    shared_ptr<HypothesisInfo>& cur_good = oracles[sent_id].good;
-    shared_ptr<HypothesisInfo>& cur_bad = oracles[sent_id].bad;
+    boost::shared_ptr<HypothesisInfo>& cur_good = oracles[sent_id].good;
+    boost::shared_ptr<HypothesisInfo>& cur_bad = oracles[sent_id].bad;
     cur_bad.reset();  // TODO get rid of??
 
     if (sample_forest) {

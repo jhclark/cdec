@@ -38,7 +38,7 @@ template <class Proxy> class ProxyIterator {
     typedef std::random_access_iterator_tag iterator_category;
     typedef typename Proxy::value_type value_type;
     typedef std::ptrdiff_t difference_type;
-    typedef Proxy reference;
+    typedef Proxy & reference;
     typedef Proxy * pointer;
 
     ProxyIterator() {}
@@ -46,6 +46,10 @@ template <class Proxy> class ProxyIterator {
     // For cast from non const to const.  
     template <class AlternateProxy> ProxyIterator(const ProxyIterator<AlternateProxy> &in) : p_(*in) {}
     explicit ProxyIterator(const Proxy &p) : p_(p) {}
+
+    friend inline void swap(ProxyIterator<Proxy> &first, ProxyIterator<Proxy> &second) {
+      swap(first.I(), second.I());
+    }
 
     // p_'s operator= does value copying, but here we want iterator copying.  
     S &operator=(const S &other) {
@@ -72,8 +76,9 @@ template <class Proxy> class ProxyIterator {
 
     std::ptrdiff_t operator-(const S &other) const { return I() - other.I(); }
 
-    Proxy operator*() { return p_; }
-    const Proxy operator*() const { return p_; }
+    Proxy &operator*() { return p_; }
+    const Proxy &operator*() const { return p_; }
+
     Proxy *operator->() { return &p_; }
     const Proxy *operator->() const { return &p_; }
     Proxy operator[](std::ptrdiff_t amount) const { return *(*this + amount); }

@@ -20,8 +20,8 @@ namespace po = boost::program_options;
 
 void SanityCheck(const vector<double>& w) {
   for (int i = 0; i < w.size(); ++i) {
-    assert(!isnan(w[i]));
-    assert(!isinf(w[i]));
+    assert(!std::isnan(w[i]));
+    assert(!std::isinf(w[i]));
   }
 }
 
@@ -102,7 +102,7 @@ int main(int argc, char** argv) {
     }
     Weights::InitFromFile(conf["means"].as<string>(), &means);
   }
-  shared_ptr<BatchOptimizer> o;
+  boost::shared_ptr<BatchOptimizer> o;
   const string omethod = conf["optimization_method"].as<string>();
   if (omethod == "rprop")
     o.reset(new RPropOptimizer(num_feats));  // TODO add configuration

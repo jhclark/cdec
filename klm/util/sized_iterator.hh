@@ -35,6 +35,11 @@ class SizedInnerIterator {
     void *Data() { return ptr_; }
     std::size_t EntrySize() const { return size_; }
 
+    friend inline void swap(SizedInnerIterator &first, SizedInnerIterator &second) {
+      std::swap(first.ptr_, second.ptr_);
+      std::swap(first.size_, second.size_);
+    }
+
   private:
     uint8_t *ptr_;
     std::size_t size_;
