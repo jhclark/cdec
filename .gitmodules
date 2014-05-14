@@ -1,0 +1,3 @@
+[submodule "pro-train/fast-oscar"]
+	path = pro-train/fast-oscar
+	url = git@github.com:jhclark/fast-oscar.git
