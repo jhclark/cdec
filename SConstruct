@@ -23,7 +23,7 @@ import os
 
 platform = ARGUMENTS.get('OS', Platform())
 # Need vest for dtree
-include = Split('decoder utils klm mteval training vest .') #dtree
+include = Split('decoder utils klm mteval training vest pro-train/fast-oscar .') #dtree
 env = Environment(ENV = os.environ, # Not very scons-like... just import the whole environment
                   PREFIX=GetOption('prefix'),
                   PLATFORM = platform,

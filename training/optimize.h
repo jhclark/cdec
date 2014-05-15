@@ -18,6 +18,14 @@ class BatchOptimizer {
   int EvaluationCount() const { return eval_; }
   bool HasConverged() const { return has_converged_; }
 
+  // to make things work seamlessly with Jon's hacky proximal AdaGradOscar interface
+  void Optimize(const double& obj,
+                const std::vector<double>& g_noreg,
+                const std::vector<double>& g,
+                std::vector<double>* x) {
+    Optimize(obj, g, x);
+  }
+
   void Optimize(const double& obj,
                 const std::vector<double>& g,
                 std::vector<double>* x) {

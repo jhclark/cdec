@@ -8,7 +8,7 @@
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
 
-#include "pro-train/fast-oscar/fast_oscar.h"
+#include "fast_oscar.h"
 
 #include "stringlib.h"
 #include "filelib.h"
@@ -33,11 +33,18 @@ struct LineFeatureGroup {
 void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
   po::options_description opts("Configuration options");
   opts.add_options()
+        ("optimizer_name",po::value<string>()->default_value("lbfgs"), "Which optimizer? 'lbfgs' or 'adagrad'")
+        ("init_learning_rate",po::value<double>()->default_value(0.01), "AdaGrad initial learning rate. (Ignored by LBFGS). We use a value much lower than 1.0 since we're already in the neighborhood.")
+        ("nonadapted_learning_rate",po::value<double>()->default_value(0.0), "AdaGrad constant learning rate (additive with adapted learning rate), not adapted using previous gradients (Ignored by LBFGS)")
+        ("gradient_buffer_size",po::value<int>()->default_value(-1), "AdaGrad gradient buffer size -- how many previous iterations' gradients should be used to adapt the learning rate -1 means unbounded (standard AdaGrad). (Ignored by LBFGS)")
+        ("num_iterations,N",po::value<int>()->default_value(100), "Number of AdaGrad iterations (Ignored by LBFGS)")
         ("weights,w", po::value<string>(), "Weights from previous iteration (used as initialization and interpolation")
-        ("regularization_strength,C",po::value<double>()->default_value(500.0), "l2 regularization strength")
+        ("regularization_strength,C",po::value<double>()->default_value(500.0), "L2 regularization strength")
+        ("L1_regularization_strength",po::value<double>()->default_value(0.0), "L1 regularization strength")
+        ("Linf_regularization_strength",po::value<double>()->default_value(0.0), "Pairwise L_infinity regularization strength")
         ("conjunction_regularization_strength,c",po::value<double>()->default_value(0.0), "l2 regularization strength applied only to conjoined features (any feature that contains a double underscore)")
         ("normalize_regularizer,n", po::bool_switch()->default_value(false), "Normalize regularization constant C by the number of features")
-        ("graph_regularization_strength,G",po::value<double>()->default_value(500.0), "l2 regularization strength for graph regularizer")
+        ("graph_regularization_strength,G",po::value<double>()->default_value(0.0), "l2 regularization strength for graph regularizer")
         ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C; this line means 'feat1 is penalized for being dissimilar from feat2 proportional to weight')")
         ("tangent_regularization_file,L",po::value<string>(), "file to read tangent regularization configuration from (format: 'reg_strength window_size feat1_name feat2_name [feat3_name...]' -- weights are per line, not cumulative with C; this line means 'feat1...featN participate in a preferably smooth line (the line implied by the features' weights). window_size features on either side of each segment of this line will be used for approximating a tangent line and each line segment will receive a penalty with strength reg_strength for being dissimilar to that slope)")
         ("regularize_by_group,x",po::bool_switch()->default_value(false), "For feature groups (lines) defined in the tangent_regularization_file, apply the regularizer to the average weight over all bins.")
@@ -50,6 +57,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("testset,t",po::value<string>(), "Optional held-out test set")
         ("tune_regularizer,T", "Use the held out test set (-t) to tune the regularization strength")
         ("interpolate_with_weights,p",po::value<double>()->default_value(1.0), "[deprecated] Output weights are p*w + (1-p)*w_prev; 1.0 = no effect")
+        ("verbose",po::bool_switch()->default_value(false), "Spew very verbose information during AdaGrad optimization")
         ("help,h", "Help");
   po::options_description dcmdline_options;
   dcmdline_options.add(opts);
@@ -142,7 +150,7 @@ double ApplyRegularizationTerms(const double C,
     // Note: We don't enforce that columns sum to 1, even though it's a good idea
     // Note: We don't need an |abs| in the gradient since the regularization graph is directed
 
-    // apply graph regularization (e.g. neighbor regularization)
+    // apply graph regularization (e.g. linear neighbor regularization)
     if (graph_reg_C != 0.0) {
       double diff_i_J = w_i;
       for (int j=0; j<weights.size(); j++) {
@@ -296,11 +304,11 @@ double TrainingInference(const vector<weight_t>& x,
 }
 
 // return held-out log likelihood
+template <typename Optimizer>
 double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& training,
                        const vector<pair<bool, SparseVector<weight_t> > >& testing,
                        const double C,
                        const double T,
-                       const unsigned memory_buffers,
                        const vector<weight_t>& prev_x,
 		       const vector<weight_t>& feat_reg,
                        const double graph_reg_C,
@@ -308,12 +316,15 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
                        const vector<LineFeatureGroup>& lines,
                        const bool regularize_by_group,
                        int dominant_feat_id,
+                       Optimizer& opt,
                        vector<weight_t>* px) {
 
   vector<weight_t>& x = *px;
   vector<weight_t> vg(FD::NumFeats(), 0.0);
+  vector<weight_t> vg_noreg(FD::NumFeats(), 0.0);
   bool converged = false;
-  LBFGSOptimizer opt(FD::NumFeats(), memory_buffers);
+
+  int iteration = 1;
   double tppl = 0.0;
   while(!converged) {
     fill(vg.begin(), vg.end(), 0.0);
@@ -330,9 +341,10 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
     }
 
     // handle regularizer
+    vg_noreg = vg;
     double reg = ApplyRegularizationTerms(C, T, x, prev_x, feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, &vg);
     cll += reg;
-    cerr << cll << " (REG=" << reg << ")\tPPL=" << ppl << "\t TEST_PPL=" << tppl << "\t" << endl;
+    cerr << iteration << ": " << cll << " (REG=" << reg << ")\tPPL=" << ppl << "\t TEST_PPL=" << tppl << "\t" << endl;
     try {
       // remove fixed parameters from gradient
       bool fixed_passthrough = false;
@@ -345,7 +357,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
         vg[dominant_feat_id] = 0.0;
       }
 
-      opt.Optimize(cll, vg, &x);
+      opt.Optimize(cll, vg_noreg, vg, &x);
       converged = opt.HasConverged();
 
       // Check if any feats are too close to dominant feat
@@ -405,6 +417,7 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
       cerr << "Biased model learned. Are your training instances wrong?\n";
       cerr << "  BIAS: " << x[0] << endl;
     }
+    iteration++;
   }
   return tppl;
 }
@@ -578,11 +591,13 @@ int main(int argc, char** argv) {
   const double min_reg = conf["min_reg"].as<double>();
   const double max_reg = conf["max_reg"].as<double>();
   double C = conf["regularization_strength"].as<double>(); // will be overridden if parameter is tuned
+  double C_1 = conf["L1_regularization_strength"].as<double>();
+  double C_inf = conf["Linf_regularization_strength"].as<double>();
   const double T = conf["regularize_to_weights"].as<double>();
-  assert(C > 0.0);
-  assert(min_reg > 0.0);
-  assert(max_reg > 0.0);
-  assert(max_reg > min_reg);
+  assert(C >= 0.0);
+  assert(min_reg >= 0.0);
+  assert(max_reg >= 0.0);
+  assert(max_reg >= min_reg);
 
   int dominant_feat_id;
   if (conf.count("dominant_feat")) {
@@ -629,6 +644,11 @@ int main(int argc, char** argv) {
   // pre-size the 2D vector at num_feats by num_feats
   // NOTE: Must do this *after* reading the corpus!
   vector<SparseVector<weight_t> > graph_reg_matrix(FD::NumFeats(), SparseVector<weight_t>());
+  for (size_t i = 0; i < FD::NumFeats(); i++) {
+    for (size_t j = 0; j < FD::NumFeats(); j++) {
+      assert(graph_reg_matrix.at(i).at(j) == 0);
+    }
+  }
   if (conf.count("graph_regularization_file")) {
     ReadFeatMatrix(conf["graph_regularization_file"].as<string>(), &graph_reg_matrix);
     //cerr << "Read feature matrix:" << endl;
@@ -657,7 +677,7 @@ int main(int argc, char** argv) {
   cerr << "Number of  testing examples: " << testing.size() << endl;
 
   // make sure new regularizers have consistent dimensions
-  feat_reg.resize(FD::NumFeats());
+  feat_reg.resize(FD::NumFeats(), 0.0);
   ResizeMatrix(FD::NumFeats(), &graph_reg_matrix);
 
   // set regularization strength for conjoined features
@@ -671,6 +691,35 @@ int main(int argc, char** argv) {
     }
   }
 
+  string optimizer_name = conf["optimizer_name"].as<string>();
+  cerr << "Using optimizer: " << optimizer_name << endl;
+  if (optimizer_name == "lbfgs") {
+    if (C_1 != 0.0) {
+      cerr << "L1 regularizer not supported with LBFGS" << endl;
+      abort();
+    }
+    if (C_inf != 0.0) {
+      cerr << "pairwise L_infinity regularizer not supported with LBFGS" << endl;
+      abort();
+    }
+  } else if (optimizer_name == "adagrad") {
+  } else {
+    cerr << "Unrecognized optimizer name" << endl;
+    abort();
+  }
+  
+  // we create both optimizers here out of laziness (this should be refactored!)
+  // but we will use only one
+  // TODO: Enable command line argument to switch between LBFGS and OSCAR
+  unsigned memory_buffers = conf["memory_buffers"].as<unsigned>();
+  LBFGSOptimizer lbfgs_opt(FD::NumFeats(), memory_buffers);
+
+  double init_learning_rate = conf["init_learning_rate"].as<double>();
+  double nonadapted_learning_rate = conf["nonadapted_learning_rate"].as<double>();
+  int gradient_buffer_size = conf["gradient_buffer_size"].as<int>();
+  int num_iterations = conf["num_iterations"].as<int>();
+  AdaGradOscarOptimizer oscar_opt(C_1, C_inf, init_learning_rate, nonadapted_learning_rate, gradient_buffer_size, num_iterations, prev_x, conf["verbose"].as<bool>());
+
   double tppl = 0.0;
   vector<pair<double,double> > sp;
   vector<double> smoothed;
@@ -681,8 +730,14 @@ int main(int argc, char** argv) {
     cerr << "SWEEP FACTOR: " << sweep_factor << endl;
     while(C < max_reg) {
       cerr << "C=" << C << "\tT=" <<T << endl;
-      tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
-                             feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, &x);
+      if (optimizer_name == "lbfgs") {
+        tppl = LearnParameters(training, testing, C, T, prev_x,
+                               feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, lbfgs_opt, &x);
+      } else {
+        tppl = LearnParameters(training, testing, C, T, prev_x,
+                               feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, oscar_opt, &x);
+        
+      }
       sp.push_back(make_pair(C, tppl));
       C *= sweep_factor;
     }
@@ -706,8 +761,14 @@ int main(int argc, char** argv) {
     C = sp[best_i].first;
   }  // tune regularizer
 
-  tppl = LearnParameters(training, testing, C, T, conf["memory_buffers"].as<unsigned>(), prev_x,
-                         feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, &x);
+  if (optimizer_name == "lbfgs") {
+    tppl = LearnParameters(training, testing, C, T, prev_x,
+                           feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, lbfgs_opt, &x);
+  } else {
+    tppl = LearnParameters(training, testing, C, T, prev_x,
+                           feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, oscar_opt, &x);
+  }
+
   if (conf.count("weights")) {
     for (int i = 1; i < x.size(); ++i) {
       x[i] = (x[i] * psi) + prev_x[i] * (1.0 - psi);
