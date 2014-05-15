@@ -686,7 +686,8 @@ int main(int argc, char** argv) {
   for (int i = 0; i < FD::NumFeats(); i++) {
     string feat_name = FD::Convert(i);
     if (feat_name.find("__") != string::npos) {
-      cerr << "Applying conjunction regularization to feature " << feat_name << " with strength " << C_conj << endl;
+      if (conf["verbose"].as<bool>())
+	cerr << "Applying conjunction regularization to feature " << feat_name << " with strength " << C_conj << endl;
       feat_reg[i] += C_conj;
     }
   }
