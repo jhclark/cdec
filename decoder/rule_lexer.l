@@ -38,7 +38,7 @@ WordID scfglex_lhs;
 int scfglex_src_arity;
 int scfglex_trg_arity;
 
-#define MAX_FEATS 100
+#define MAX_FEATS 10000
 int scfglex_feat_ids[MAX_FEATS];
 double scfglex_feat_vals[MAX_FEATS];
 int scfglex_num_feats;
