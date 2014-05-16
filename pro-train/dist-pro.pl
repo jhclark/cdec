@@ -129,11 +129,11 @@ if (GetOptions(
 	"source-file=s" => \$srcFile,
 	"workdir=s" => \$dir,
 
-	"optimizer-name" => \$optimizer_name,
-	"adagrad-iterations" => \$adagrad_iterations,
-	"adagrad-eta" => \$adagrad_eta,
-	"l1-reg" => \$l1_reg,
-	"linf-reg" => \$linf_reg,
+	"optimizer-name=s" => \$optimizer_name,
+	"adagrad-iterations=i" => \$adagrad_iterations,
+	"adagrad-eta=f" => \$adagrad_eta,
+	"l1-reg=f" => \$l1_reg,
+	"linf-reg=f" => \$linf_reg,
 
 	"do-binning" => \$do_binning,
 	"uniq-feats-file=s" => \$uniq_feats_file,
