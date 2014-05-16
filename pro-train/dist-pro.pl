@@ -87,6 +87,13 @@ my $regularize_by_group = 0; # evenly distribute basic L2 regularizer C over fea
 
 my $kbest_size = 1500;
 
+# adagrad options
+my $optimizer_name = "lbfgs";
+my $adagrad_iterations = 0;
+my $adagrad_eta = 0.0;
+my $l1_reg = 0.0;
+my $linf_reg = 0.0;
+
 # Process command-line options
 Getopt::Long::Configure("no_auto_abbrev");
 if (GetOptions(
@@ -121,6 +128,12 @@ if (GetOptions(
 	"metric=s" => \$metric,
 	"source-file=s" => \$srcFile,
 	"workdir=s" => \$dir,
+
+	"optimizer-name" => \$optimizer_name,
+	"adagrad-iterations" => \$adagrad_iterations,
+	"adagrad-eta" => \$adagrad_eta,
+	"l1-reg" => \$l1_reg,
+	"linf-reg" => \$linf_reg,
 
 	"do-binning" => \$do_binning,
 	"uniq-feats-file=s" => \$uniq_feats_file,
@@ -493,6 +506,21 @@ while (1){
         if ($regularize_by_group) {
             $cmd .= " --regularize_by_group";
         }
+	if ($optimizer_name != "lbfgs") {
+	    $cmd .= " --optimizer_name $optimizer_name";
+	}
+	if ($adagrad_iterations > -1) {
+	    $cmd .= " --adagrad_iterations $adagrad_iterations";
+	}
+	if ($adagrad_eta > 0.0) {
+	    $cmd .= " --adagrad_eta $adagrad_eta";
+	}
+ 	if ($l1_reg > 0.0) {
+	    $cmd .= " --L1_regularization_strength $l1_reg";
+	}
+ 	if ($linf_reg > 0.0) {
+	    $cmd .= " --Linf_regularization_strength $linf_reg";
+	}
 	if ($do_binning) {
 	    $cmd .= " > $dir/weights.opt.$iteration";
 	} else {
