@@ -510,10 +510,10 @@ while (1){
 	    $cmd .= " --optimizer_name $optimizer_name";
 	}
 	if ($adagrad_iterations > -1) {
-	    $cmd .= " --adagrad_iterations $adagrad_iterations";
+	    $cmd .= " --num_iterations $adagrad_iterations";
 	}
 	if ($adagrad_eta > 0.0) {
-	    $cmd .= " --adagrad_eta $adagrad_eta";
+	    $cmd .= " --init_learning_rate $adagrad_eta";
 	}
  	if ($l1_reg > 0.0) {
 	    $cmd .= " --L1_regularization_strength $l1_reg";
