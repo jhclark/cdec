@@ -16,6 +16,9 @@ parser.add_argument('--minWordFreq', help='Adds the minimum word frequency of th
 parser.add_argument('--maxWordFreq', help='Adds the maximum word frequency of the phrase as a real-valued feature', action='store_true')
 parser.add_argument('--wordFreqs', help='Emit word frequencies for each word on source and target', action='store_true')
 
+parser.add_argument('--malletTopicsFile', help='Mallet text format file with topic distributions for each source sentence')
+parser.add_argument('--useTopics', help='Add topic distribution to each rule', action='store_true')
+
 parser.add_argument('--phraseCharLen', help='Adds the length of the phrase in characters as an integer feature', action='store_true')
 parser.add_argument('--puncCount', help='Adds the count of punctuation words as an integer feature', action='store_true')
 
@@ -43,10 +46,27 @@ if args.tgtHfwFile:
         tgtHfwList.append(word)
     tgtHfwLexSet = set(tgtHfwList[:args.tgtHfwLex])
 
+if args.malletTopicsFile:
+    # Example:
+    # #doc source topic proportion ...
+    # 0 null-source 98 0.0 42 0.0008
+    topics = []
+    for line in codecs.open(args.malletTopicsFile, 'r', 'utf-8'):
+        if not line.startswith('#'):
+            sentTopics = []
+            toks = line.strip().split()[2:]
+            for i in range(0, len(toks), 2):
+                topic = toks[i]
+                prob = toks[i+1]
+                topicFeat = "Topic"+topic+"="+prob
+                sentTopics.append(topicFeat)
+            topics.append(sentTopics)
+
 def isPunct(tok): return all([ unicodedata.category(c) == 'P' for c in tok ])
 def isNonterm(tok): return len(tok) >= 3 and tok[0] == '[' and tok[-1] == ']'
 def escapeFeat(name): return name.replace(';','SEMI')
 
+i = 0
 for line in sys.stdin:
     while not line.endswith('\n'):
         line += sys.stdin.next() # don't break lines on special unicode markers
@@ -99,8 +119,13 @@ for line in sys.stdin:
         tgtPuncCount = sum(isPunct(tok) for tok in tgtTerms)
         newFeatList.append("TgtPuncTokCount=%d"%(tgtPuncCount))
 
+    if args.useTopics:
+        sentTopics = topics[i]
+        newFeatList.extend(sentTopics)
+
     feats += ' ' + ' '.join(newFeatList)
     feats = escapeFeat(feats)
     print ' ||| '.join([lhs, src, tgt, feats, align])
+    i += 1
     
 
