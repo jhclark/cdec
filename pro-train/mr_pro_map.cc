@@ -9,6 +9,7 @@
 #include <boost/shared_ptr.hpp>
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <boost/algorithm/string/trim.hpp>
 
 #include "sampler.h"
 #include "filelib.h"
@@ -147,37 +148,69 @@ void WriteKBest(const string& file, const vector<HypInfo>& kbest) {
   ostream& out = *wf.stream();
   out.precision(10);
   for (int i = 0; i < kbest.size(); ++i) {
-    out << TD::GetString(kbest[i].hyp) << endl;
-    out << kbest[i].x << endl;
+    const HypInfo& info = kbest.at(i);
+    const SparseVector<weight_t>& feats = info.x;
+
+    out << TD::GetString(info.hyp) << endl;
+    //out << feats << endl;
+    //for (typename FastSparseVector::const_iterator it = other.begin(); it != end; ++it) {
+    for (const std::pair<const int, weight_t> pair : feats) {
+      // note: we're writing the integer feature ID instead of the name
+      // so that gzip gets a better compression ratio (~5X for Jon's large feature sets)
+      // we'll also need the full mapping of feature ID's to feature names to read this file later
+      // since this mapping is valid only within the current process
+      assert(pair.first != 0);
+      out << " " << pair.first << "=" << pair.second;
+    }
+    out << endl;
   }
 }
 
-void ParseSparseVector(string& line, size_t cur, SparseVector<weight_t>* out) {
+// warning: mutates line
+void ParseSparseVector(string& line, const vector<string>& feat_names, size_t cur, SparseVector<weight_t>* out) {
   SparseVector<weight_t>& x = *out;
   size_t last_start = cur;
-  size_t last_comma = string::npos;
-  while(cur <= line.size()) {
+  size_t last_equals = string::npos;
+  while (cur <= line.size()) {
     if (line[cur] == ' ' || cur == line.size()) {
-      if (!(cur > last_start && last_comma != string::npos && cur > last_comma)) {
+      if (!(cur > last_start && last_equals != string::npos && cur > last_equals)) {
         cerr << "[ERROR] " << line << endl << "  position = " << cur << endl;
         exit(1);
       }
-      const int fid = FD::Convert(line.substr(last_start, last_comma - last_start));
+
+      const string old_fid_str = line.substr(last_start, last_equals - last_start);
+      int fid;
+      if (feat_names.size() == 0) {
+        // no feature names were read, so just use the string directly
+        fid = FD::Convert(old_fid_str);
+      } else {
+        int old_fid;
+        if (!(stringstream(old_fid_str) >> old_fid)) {
+          cerr << "Invalid feature ID: " << old_fid << endl;
+          abort();
+        }
+        if (old_fid == 0 || old_fid >= feat_names.size()) {
+          cerr << "ERROR: Got an old feature ID that is out of range for the feature names file: " << old_fid << endl;
+          abort();
+        }
+        const string feat_name = feat_names.at(old_fid);
+        fid = FD::Convert(feat_name);
+      }
       if (cur < line.size()) line[cur] = 0;
-      const double val = strtod(&line[last_comma + 1], NULL);
+      const double val = strtod(&line[last_equals + 1], NULL);
       x.set_value(fid, val);
 
-      last_comma = string::npos;
+      last_equals = string::npos;
       last_start = cur+1;
     } else {
       if (line[cur] == '=')
-        last_comma = cur;
+        last_equals = cur;
     }
     ++cur;
   }
 }
 
-void ReadKBest(const string& file, vector<HypInfo>* kbest) {
+void ReadKBest(const string& file, const std::vector<string>& feat_names, vector<HypInfo>* kbest) {
   cerr << "Reading from " << file << endl;
   ReadFile rf(file);
   istream& in = *rf.stream();
@@ -188,7 +221,8 @@ void ReadKBest(const string& file, vector<HypInfo>* kbest) {
     assert(in);
     kbest->push_back(HypInfo());
     TD::ConvertSentence(cand, &kbest->back().hyp);
-    ParseSparseVector(feats, 0, &kbest->back().x);
+    boost::trim(feats);
+    ParseSparseVector(feats, feat_names, 0, &kbest->back().x);
   }
   cerr << "  read " << kbest->size() << " hypotheses\n";
 }
@@ -310,6 +344,33 @@ void Sample(const unsigned gamma,
   }
 }
 
+void WriteFeatureNames(const string& filename) {
+  WriteFile wf_mapping(filename);
+  ostream& out_mapping = *wf_mapping.stream();
+  for (int i = 1; i < FD::NumFeats(); i++) {
+    out_mapping << FD::Convert(i) << endl;
+  }
+}
+
+void ReadFeatureNames(const string& filename, vector<string>* feat_names) {
+  assert(feat_names != nullptr);
+
+  ifstream checker(filename);
+  if (checker.good()) {
+    ReadFile in_read(filename);
+    istream& in = *in_read.stream();
+    string line;
+    
+    // add the invalid feature ID zero
+    feat_names->push_back(FD::Convert(0));
+    while (getline(in, line)) {
+      feat_names->push_back(line);
+    }
+  } else {
+    cerr << "File does not exist: skipping reading of feature names: " << filename << endl;
+  }
+}
+
 int main(int argc, char** argv) {
   po::variables_map conf;
   InitCommandLine(argc, argv, &conf);
@@ -333,10 +394,19 @@ int main(int argc, char** argv) {
 
   const bool prune_kbest_by_length_hammer = (conf["prune_kbest_by_length_hammer"].as<int>() != 0);
 
+  string kbest_repo = conf["kbest_repository"].as<string>();
+
+  // this file will be overwritten just before mr_pro_map terminates
+  ostringstream os_mapping;
+  os_mapping << kbest_repo << "/kbest.feats.gz";
+  const string kbest_mapping_file = os_mapping.str();
+  vector<string> old_feat_names;
+  ReadFeatureNames(kbest_mapping_file, &old_feat_names);
+
   string weightsf = conf["weights"].as<string>();
   vector<weight_t> weights;
+
   Weights::InitFromFile(weightsf, &weights);
-  string kbest_repo = conf["kbest_repository"].as<string>();
   // this has been moved out into dist_pro.pl
   // This can cause an abort on Lustre due to race conditions
   //MkDirP(kbest_repo);
@@ -350,13 +420,15 @@ int main(int argc, char** argv) {
     string file;
     // path-to-file (JSON) sent_id
     is >> file >> sent_id;
-    ReadFile rf(file);
-    ostringstream os;
     vector<HypInfo> J_i;
+    ReadFile rf(file);
+
+    ostringstream os;
     os << kbest_repo << "/kbest." << sent_id << ".txt.gz";
     const string kbest_file = os.str();
+
     if (FileExists(kbest_file))
-      ReadKBest(kbest_file, &J_i);
+      ReadKBest(kbest_file, old_feat_names, &J_i);
     HypergraphIO::ReadFromJSON(rf.stream(), &hg);
     hg.Reweight(weights);
     KBest::KBestDerivations<vector<WordID>, ESentenceTraversal> kbest(hg, kbest_size);
@@ -391,6 +463,10 @@ int main(int argc, char** argv) {
       num_sampled += v.size();
     }
   }
+  
+  // write out the feature mapping from our current in-memory feature dictionary
+  WriteFeatureNames(kbest_mapping_file);
+
   if (num_sampled < 1) {
     cerr << "ERROR: Zero training examplars were sampled" << endl;
     abort();
