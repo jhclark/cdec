@@ -324,7 +324,8 @@ while (1){
 	check_bash_call($cmd);
         my $num_hgs;
         my $num_topbest;
-        my $retries = 0;
+
+	my $retries = 0;
 	while($retries < 5) {
 	    $num_hgs = check_output("ls $dir/hgs/*.gz | wc -l");
 	    $num_topbest = check_output("wc -l < $runFile");
@@ -506,10 +507,10 @@ while (1){
         if ($regularize_by_group) {
             $cmd .= " --regularize_by_group";
         }
-	if ($optimizer_name != "lbfgs") {
+	if ($optimizer_name neq "lbfgs") {
 	    $cmd .= " --optimizer_name $optimizer_name";
 	}
-	if ($adagrad_iterations > -1) {
+	if ($adagrad_iterations > 0) {
 	    $cmd .= " --num_iterations $adagrad_iterations";
 	}
 	if ($adagrad_eta > 0.0) {
@@ -521,11 +522,13 @@ while (1){
  	if ($linf_reg > 0.0) {
 	    $cmd .= " --Linf_regularization_strength $linf_reg";
 	}
+
 	if ($do_binning) {
 	    $cmd .= " > $dir/weights.opt.$iteration";
 	} else {
 	    $cmd .= " > $dir/weights.$iteration";
 	}
+
 	print STDERR "COMMAND:\n$cmd\n";
 	check_bash_call($cmd);
 	$lastWeightsFile = "$dir/weights.$iteration";
