@@ -507,7 +507,7 @@ while (1){
         if ($regularize_by_group) {
             $cmd .= " --regularize_by_group";
         }
-	if ($optimizer_name neq "lbfgs") {
+	if ($optimizer_name ne "lbfgs") {
 	    $cmd .= " --optimizer_name $optimizer_name";
 	}
 	if ($adagrad_iterations > 0) {
