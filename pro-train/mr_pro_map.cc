@@ -143,7 +143,7 @@ struct HypInfoHasher {
   }
 };
 
-void WriteKBest(const string& file, const vector<HypInfo>& kbest) {
+void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<int> fid_to_kbest_ids) {
   WriteFile wf(file);
   ostream& out = *wf.stream();
   out.precision(10);
@@ -160,6 +160,10 @@ void WriteKBest(const string& file, const vector<HypInfo>& kbest) {
       // we'll also need the full mapping of feature ID's to feature names to read this file later
       // since this mapping is valid only within the current process
       assert(pair.first != 0);
+      if (pair.first >= fid_to_kbest_ids.size()) {
+        cerr << "ERROR: Feature not found in kbest feature mapping: " << pair.first << endl;
+      }
+      int kbest_feat_id = fid_to_kbest_ids.at(pair.first);
       out << " " << pair.first << "=" << pair.second;
     }
     out << endl;
@@ -344,16 +348,9 @@ void Sample(const unsigned gamma,
   }
 }
 
-void WriteFeatureNames(const string& filename) {
-  WriteFile wf_mapping(filename);
-  ostream& out_mapping = *wf_mapping.stream();
-  for (int i = 1; i < FD::NumFeats(); i++) {
-    out_mapping << FD::Convert(i) << endl;
-  }
-}
-
-void ReadFeatureNames(const string& filename, vector<string>* feat_names) {
+void ReadFeatureNames(const string& filename, vector<string>* feat_names, vector<int>* fid_to_kbest_ids) {
   assert(feat_names != nullptr);
+  assert(fid_to_kbest_ids != nullptr);
 
   ifstream checker(filename);
   if (checker.good()) {
@@ -365,6 +362,12 @@ void ReadFeatureNames(const string& filename, vector<string>* feat_names) {
     feat_names->push_back(FD::Convert(0));
     while (getline(in, line)) {
       feat_names->push_back(line);
+    }
+    fid_to_kbest_ids->resize(FD::NumFeats(), -1);
+    for (int kbest_id = 0; kbest_id < feat_names->size(); kbest_id++) {
+      string& feat_name = feat_names->at(kbest_id);
+      int fid = FD::Convert(feat_name);
+      (*fid_to_kbest_ids)[fid] = kbest_id;
     }
   } else {
     cerr << "File does not exist: skipping reading of feature names: " << filename << endl;
@@ -401,7 +404,8 @@ int main(int argc, char** argv) {
   os_mapping << kbest_repo << "/kbest.feats.gz";
   const string kbest_mapping_file = os_mapping.str();
   vector<string> old_feat_names;
-  ReadFeatureNames(kbest_mapping_file, &old_feat_names);
+  vector<int> fid_to_kbest_ids;
+  ReadFeatureNames(kbest_mapping_file, &old_feat_names, &fid_to_kbest_ids);
 
   string weightsf = conf["weights"].as<string>();
   vector<weight_t> weights;
@@ -448,7 +452,7 @@ int main(int argc, char** argv) {
       J_i.push_back(HypInfo(d->yield, d->feature_values));
     }
     Dedup(&J_i);
-    WriteKBest(kbest_file, J_i);
+    WriteKBest(kbest_file, J_i, fid_to_kbest_ids);
 
     // the kbest hammer might have thrown out all usable hypotheses
     if (J_i.size() > 0) {
@@ -464,9 +468,6 @@ int main(int argc, char** argv) {
     }
   }
   
-  // write out the feature mapping from our current in-memory feature dictionary
-  WriteFeatureNames(kbest_mapping_file);
-
   if (num_sampled < 1) {
     cerr << "ERROR: Zero training examplars were sampled" << endl;
     abort();

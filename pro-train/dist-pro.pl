@@ -25,6 +25,7 @@ my $FAST_SCORE="$bin_dir/../mteval/fast_score";
 die "Can't execute $FAST_SCORE" unless -x $FAST_SCORE;
 my $MAPINPUT = "$bin_dir/mr_pro_generate_mapper_input.pl";
 my $MAPPER = "$bin_dir/mr_pro_map";
+my $FEAT_TABLE = "$bin_dir/create_feature_table.awk";
 my $REDUCER = "$bin_dir/mr_pro_reduce";
 my $BINNER = "$BINOPT_DIR/make_bins.sh";
 my $parallelize = "$VEST_DIR/parallelize.pl";
@@ -251,7 +252,7 @@ if ($dryrun){
 	} else {
 		-e $dir || mkdir $dir;
 		mkdir "$dir/hgs";
-        modbin("$dir/bin",\$LocalConfig,\$cdec,\$SCORER,\$MAPINPUT,\$MAPPER,\$REDUCER,\$parallelize,\$sentserver,\$sentclient,\$libcall) if $cpbin;
+        modbin("$dir/bin",\$LocalConfig,\$cdec,\$SCORER,\$FEAT_TABLE,\$MAPINPUT,\$MAPPER,\$REDUCER,\$parallelize,\$sentserver,\$sentclient,\$libcall) if $cpbin;
     mkdir "$dir/scripts";
         my $cmdfile="$dir/rerun-pro.sh";
         open CMD,'>',$cmdfile;
@@ -395,6 +396,11 @@ while (1){
                 if ($prune_kbest_by_length_hammer) {
                     $kbest_hammer_flag = "--prune_kbest_by_length_hammer 1";
                 }
+
+                # Before running the mapper, create a mapping from sequential integers to feature names so that we can store
+                # the k-best list in a slightly more compact way
+                $featTableScript = "zcat $dir/hgs/*.json.gz | $FEAT_TABLE > $dir/kbest/kbest.feats.gz";
+		check_bash_call($featTableScript);
 
 		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest -k $kbest_size $kbest_hammer_flag < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
 		if ($use_make) {
