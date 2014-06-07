@@ -25,7 +25,7 @@ my $FAST_SCORE="$bin_dir/../mteval/fast_score";
 die "Can't execute $FAST_SCORE" unless -x $FAST_SCORE;
 my $MAPINPUT = "$bin_dir/mr_pro_generate_mapper_input.pl";
 my $MAPPER = "$bin_dir/mr_pro_map";
-my $FEAT_TABLE = "$bin_dir/create_feature_table.awk";
+my $FEAT_TABLE = "$bin_dir/create_feature_table";
 my $REDUCER = "$bin_dir/mr_pro_reduce";
 my $BINNER = "$BINOPT_DIR/make_bins.sh";
 my $parallelize = "$VEST_DIR/parallelize.pl";
@@ -399,7 +399,7 @@ while (1){
 
                 # Before running the mapper, create a mapping from sequential integers to feature names so that we can store
                 # the k-best list in a slightly more compact way
-                my $featTableScript = "zcat $dir/hgs/*.json.gz | $FEAT_TABLE > $dir/kbest/kbest.feats.gz";
+                my $featTableScript = "$FEAT_TABLE < $dir/splag.$im1/mapinput.* > $dir/kbest/kbest.feats.gz";
 		check_bash_call($featTableScript);
 
 		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest -k $kbest_size $kbest_hammer_flag < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";

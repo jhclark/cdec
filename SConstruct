@@ -193,6 +193,7 @@ env.Program(target='mteval/mbr_kbest', source=comb('mteval/mbr_kbest.cc', srcs))
 # TODO: phrasinator
 
 # PRO Trainer
+env.Program(target='pro-train/create_feature_table', source=comb('pro-train/create_feature_table.cc', srcs))
 env.Program(target='pro-train/mr_pro_map', source=comb('pro-train/mr_pro_map.cc', srcs))
 env.Program(target='pro-train/mr_pro_reduce', source=comb('pro-train/mr_pro_reduce.cc', srcs))
 
