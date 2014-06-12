@@ -3,7 +3,7 @@
 #include <fstream>
 #include <vector>
 #include <algorithm>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include <boost/functional/hash.hpp>
 #include <boost/shared_ptr.hpp>
@@ -154,7 +154,7 @@ void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<i
     out << TD::GetString(info.hyp) << endl;
     //out << feats << endl;
     //for (typename FastSparseVector::const_iterator it = other.begin(); it != end; ++it) {
-    for (const std::pair<const int, weight_t> pair : feats) {
+    for (auto pair : feats) {
       // note: we're writing the integer feature ID instead of the name
       // so that gzip gets a better compression ratio (~5X for Jon's large feature sets)
       // we'll also need the full mapping of feature ID's to feature names to read this file later
@@ -171,7 +171,7 @@ void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<i
 }
 
 // warning: mutates line
-void ParseSparseVector(string& line, const vector<string>& feat_names, size_t cur, SparseVector<weight_t>* out) {
+void ParseSparseVector(string& line, const std::unordered_map<int, string>& feat_names, size_t cur, SparseVector<weight_t>* out) {
   SparseVector<weight_t>& x = *out;
   size_t last_start = cur;
   size_t last_equals = string::npos;
@@ -214,7 +214,7 @@ void ParseSparseVector(string& line, const vector<string>& feat_names, size_t cu
   }
 }
 
-void ReadKBest(const string& file, const std::vector<string>& feat_names, vector<HypInfo>* kbest) {
+void ReadKBest(const string& file, const std::unordered_map<int, string>& feat_names, vector<HypInfo>* kbest) {
   cerr << "Reading from " << file << endl;
   ReadFile rf(file);
   istream& in = *rf.stream();
@@ -223,6 +223,8 @@ void ReadKBest(const string& file, const std::vector<string>& feat_names, vector
   while(getline(in, cand)) {
     getline(in, feats);
     assert(in);
+    std::cerr << "CAND: " << cand << std::endl;
+    std::cerr << "FEATS: " << feats << std::endl;
     kbest->push_back(HypInfo());
     TD::ConvertSentence(cand, &kbest->back().hyp);
     boost::trim(feats);
@@ -348,24 +350,34 @@ void Sample(const unsigned gamma,
   }
 }
 
-void ReadFeatureNames(const string& filename, vector<string>* feat_names, vector<int>* fid_to_kbest_ids) {
+void ReadFeatureNames(const std::string& filename, std::unordered_map<int, std::string>* feat_names, std::vector<int>* fid_to_kbest_ids) {
   assert(feat_names != nullptr);
   assert(fid_to_kbest_ids != nullptr);
 
   ifstream checker(filename);
   if (checker.good()) {
+    std::cerr << "Reading feature name mapping from " << filename << std::endl;
+
     ReadFile in_read(filename);
     istream& in = *in_read.stream();
     string line;
     
     // add the invalid feature ID zero
-    feat_names->push_back(FD::Convert(0));
+    feat_names->clear();
     while (getline(in, line)) {
-      feat_names->push_back(line);
+      std::vector<std::string> toks;
+      Tokenize(line, ' ', &toks);
+      assert(toks.size() == 2);
+      const std::string& str_key = toks.at(0);
+      const int key = atoi(str_key.c_str());
+      const std::string& value = toks.at(1);
+      feat_names->emplace(key, value);
     }
+
     fid_to_kbest_ids->resize(FD::NumFeats(), -1);
-    for (int kbest_id = 0; kbest_id < feat_names->size(); kbest_id++) {
-      string& feat_name = feat_names->at(kbest_id);
+    for (auto pair : *feat_names) {
+      const int kbest_id = pair.first;
+      const std::string& feat_name = pair.second;
       int fid = FD::Convert(feat_name);
       (*fid_to_kbest_ids)[fid] = kbest_id;
     }
@@ -403,8 +415,8 @@ int main(int argc, char** argv) {
   ostringstream os_mapping;
   os_mapping << kbest_repo << "/kbest.feats.gz";
   const string kbest_mapping_file = os_mapping.str();
-  vector<string> old_feat_names;
-  vector<int> fid_to_kbest_ids;
+  std::unordered_map<int, string> old_feat_names;
+  std::vector<int> fid_to_kbest_ids;
   ReadFeatureNames(kbest_mapping_file, &old_feat_names, &fid_to_kbest_ids);
 
   string weightsf = conf["weights"].as<string>();
@@ -433,6 +445,7 @@ int main(int argc, char** argv) {
 
     if (FileExists(kbest_file))
       ReadKBest(kbest_file, old_feat_names, &J_i);
+
     HypergraphIO::ReadFromJSON(rf.stream(), &hg);
     hg.Reweight(weights);
     KBest::KBestDerivations<vector<WordID>, ESentenceTraversal> kbest(hg, kbest_size);
