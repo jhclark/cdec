@@ -362,6 +362,7 @@ void ReadFeatureNames(const std::string& filename, std::unordered_map<int, std::
     istream& in = *in_read.stream();
     string line;
     
+    
     // add the invalid feature ID zero
     feat_names->clear();
     while (getline(in, line)) {
@@ -370,17 +371,24 @@ void ReadFeatureNames(const std::string& filename, std::unordered_map<int, std::
       assert(toks.size() == 2);
       const std::string& str_key = toks.at(0);
       const int key = atoi(str_key.c_str());
-      const std::string& value = toks.at(1);
-      feat_names->emplace(key, value);
+      const std::string& feat_name = toks.at(1);
+      feat_names->emplace(key, feat_name);
     }
-
+    
     fid_to_kbest_ids->resize(FD::NumFeats(), -1);
     for (auto pair : *feat_names) {
       const int kbest_id = pair.first;
-      const std::string& feat_name = pair.second;
+      const std::string feat_name = pair.second;
       int fid = FD::Convert(feat_name);
+      if (fid >= fid_to_kbest_ids->size())
+        fid_to_kbest_ids->resize(fid+1, -1);
       (*fid_to_kbest_ids)[fid] = kbest_id;
     }
+
+    for (int i = 1; i < fid_to_kbest_ids->size(); i++) {
+      assert(fid_to_kbest_ids->at(i) != -1);
+    }
+    
   } else {
     cerr << "File does not exist: skipping reading of feature names: " << filename << endl;
   }
@@ -411,7 +419,6 @@ int main(int argc, char** argv) {
 
   string kbest_repo = conf["kbest_repository"].as<string>();
 
-  // this file will be overwritten just before mr_pro_map terminates
   ostringstream os_mapping;
   os_mapping << kbest_repo << "/kbest.feats.gz";
   const string kbest_mapping_file = os_mapping.str();
