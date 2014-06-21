@@ -358,6 +358,8 @@ while (1){
 	my $score = 0;
 	my $icc = 0;
 	my $inweights="$dir/weights.$im1";
+
+        # create map input
 	$cmd="$MAPINPUT $dir/hgs > $dir/agenda.$im1";
 	print STDERR "COMMAND:\n$cmd\n";
 	check_call($cmd);
@@ -369,6 +371,14 @@ while (1){
 	my @shards = grep { /^mapinput\./ } readdir(DIR);
 	closedir DIR;
 	die "No shards!" unless scalar @shards > 0;
+
+        # create the feature table before running any map tasks
+        # create a mapping from sequential integers to feature names so that we can store
+        # the k-best list in a slightly more compact way
+        my $featTableScript = "cat $dir/splag.$im1/mapinput.* | $FEAT_TABLE > $dir/kbest/kbest.feats.gz";
+        check_bash_call($featTableScript);
+
+        # run map tasks in parallel
 	my $joblist = "";
 	my $nmappers = 0;
 	@cleanupcmds = ();
@@ -396,11 +406,6 @@ while (1){
                 if ($prune_kbest_by_length_hammer) {
                     $kbest_hammer_flag = "--prune_kbest_by_length_hammer 1";
                 }
-
-                # Before running the mapper, create a mapping from sequential integers to feature names so that we can store
-                # the k-best list in a slightly more compact way
-                my $featTableScript = "cat $dir/splag.$im1/mapinput.* | $FEAT_TABLE > $dir/kbest/kbest.feats.gz";
-		check_bash_call($featTableScript);
 
 		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest -k $kbest_size $kbest_hammer_flag < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
 		if ($use_make) {
