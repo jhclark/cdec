@@ -153,7 +153,6 @@ void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<i
 
     out << TD::GetString(info.hyp) << endl;
     //out << feats << endl;
-    //for (typename FastSparseVector::const_iterator it = other.begin(); it != end; ++it) {
     for (auto pair : feats) {
       // note: we're writing the integer feature ID instead of the name
       // so that gzip gets a better compression ratio (~5X for Jon's large feature sets)
@@ -161,10 +160,13 @@ void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<i
       // since this mapping is valid only within the current process
       assert(pair.first != 0);
       if (pair.first >= fid_to_kbest_ids.size()) {
-        cerr << "ERROR: Feature not found in kbest feature mapping: " << pair.first << endl;
+        // non-grammar features (e.g. Glue) may not be in the mapping
+        const string& feat_name = FD::Convert(pair.first);
+        out << " " << "_" << feat_name  << "=" << pair.second;
+      } else {
+        int kbest_feat_id = fid_to_kbest_ids.at(pair.first);
+        out << " " << kbest_feat_id << "=" << pair.second;
       }
-      int kbest_feat_id = fid_to_kbest_ids.at(pair.first);
-      out << " " << pair.first << "=" << pair.second;
     }
     out << endl;
   }
@@ -181,23 +183,28 @@ void ParseSparseVector(string& line, const std::unordered_map<int, string>& feat
         cerr << "[ERROR] " << line << endl << "  position = " << cur << endl;
         exit(1);
       }
-
-      const string old_fid_str = line.substr(last_start, last_equals - last_start);
+ 
+      const string kbest_fid_str = line.substr(last_start, last_equals - last_start);
       int fid;
       if (feat_names.size() == 0) {
         // no feature names were read, so just use the string directly
-        fid = FD::Convert(old_fid_str);
+        fid = FD::Convert(kbest_fid_str);
+
+      // for non-grammar features (e.g. Glue), we prepend the feature name with an underscore since they aren't in the mapping
+      } else if (kbest_fid_str[0] == '_') {
+        const std::string actual_feat_name = kbest_fid_str.substr(1);
+        fid = FD::Convert(actual_feat_name);
       } else {
-        int old_fid;
-        if (!(stringstream(old_fid_str) >> old_fid)) {
-          cerr << "Invalid feature ID: " << old_fid << endl;
+        int kbest_fid;
+        if (!(stringstream(kbest_fid_str) >> kbest_fid)) {
+          cerr << "Invalid feature ID: " << kbest_fid << endl;
           abort();
         }
-        if (old_fid == 0 || old_fid >= feat_names.size()) {
-          cerr << "ERROR: Got an old feature ID that is out of range for the feature names file: " << old_fid << endl;
+        if (kbest_fid == 0 || kbest_fid >= feat_names.size()) {
+          cerr << "ERROR: Got an old feature ID that is out of range for the feature names file: " << kbest_fid << endl;
           abort();
         }
-        const string feat_name = feat_names.at(old_fid);
+        const std::string feat_name = feat_names.at(kbest_fid);
         fid = FD::Convert(feat_name);
       }
       if (cur < line.size()) line[cur] = 0;
@@ -372,6 +379,7 @@ void ReadFeatureNames(const std::string& filename, std::unordered_map<int, std::
       const std::string& str_key = toks.at(0);
       const int key = atoi(str_key.c_str());
       const std::string& feat_name = toks.at(1);
+      FD::Convert(feat_name);
       feat_names->emplace(key, feat_name);
     }
     
@@ -380,8 +388,10 @@ void ReadFeatureNames(const std::string& filename, std::unordered_map<int, std::
       const int kbest_id = pair.first;
       const std::string feat_name = pair.second;
       int fid = FD::Convert(feat_name);
+
       if (fid >= fid_to_kbest_ids->size())
         fid_to_kbest_ids->resize(fid+1, -1);
+
       (*fid_to_kbest_ids)[fid] = kbest_id;
     }
 
