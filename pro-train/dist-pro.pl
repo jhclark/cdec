@@ -372,6 +372,9 @@ while (1){
 	closedir DIR;
 	die "No shards!" unless scalar @shards > 0;
 
+        # make k-best directory, which is shared by all iterations
+        check_bash_call("mkdir -p $dir/kbest");
+
         # create the feature table before running any map tasks
         # create a mapping from sequential integers to feature names so that we can store
         # the k-best list in a slightly more compact way
@@ -401,7 +404,6 @@ while (1){
 		$mapoutput =~ s/mapinput/mapoutput/;
 		push @mapoutputs, "$dir/splag.$im1/$mapoutput";
 		$o2i{"$dir/splag.$im1/$mapoutput"} = "$dir/splag.$im1/$shard";
-		check_bash_call("mkdir -p $dir/kbest");
                 my $kbest_hammer_flag = "";
                 if ($prune_kbest_by_length_hammer) {
                     $kbest_hammer_flag = "--prune_kbest_by_length_hammer 1";
