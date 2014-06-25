@@ -89,7 +89,7 @@ class FastSparseVector {
     typename FastMapType::const_iterator remote_it_;
     const std::pair<const int, T>& operator*() const {
       if (local_)
-        return *reinterpret_cast<const std::pair<const int, float>*>(local_it_);
+        return *reinterpret_cast<const std::pair<const int, T>*>(local_it_);
       else
         return *remote_it_;
     }
