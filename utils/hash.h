@@ -14,10 +14,10 @@
 # define HASH_MAP_RESERVED(h,empty,deleted) do { h.set_empty_key(empty); h.set_deleted_key(deleted); } while(0)
 # define HASH_MAP_EMPTY(h,empty) do { h.set_empty_key(empty); } while(0)
 #else
-# include <tr1/unordered_map>
-# include <tr1/unordered_set>
-# define HASH_MAP std::tr1::unordered_map
-# define HASH_SET std::tr1::unordered_set
+# include <unordered_map>
+# include <unordered_set>
+# define HASH_MAP std::unordered_map
+# define HASH_SET std::unordered_set
 # define HASH_MAP_RESERVED(h,empty,deleted)
 # define HASH_MAP_EMPTY(h,empty)
 #endif

@@ -8,8 +8,8 @@
 
 #include <vector>
 #include <algorithm>
-#include <tr1/unordered_map>
-#include <tr1/unordered_set>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <boost/functional/hash.hpp>
 
@@ -22,7 +22,6 @@
 #define FAST_CP_2 3
 
 using namespace std;
-using namespace std::tr1;
 
 struct Candidate;
 typedef SmallVectorInt JVector;
@@ -158,8 +157,8 @@ struct CandidateUniquenessEquals {
   }
 };
 
-typedef unordered_set<const Candidate*, CandidateUniquenessHash, CandidateUniquenessEquals> UniqueCandidateSet;
-typedef unordered_map<FFState, Candidate*, boost::hash<FFState> > State2Node;
+typedef std::unordered_set<const Candidate*, CandidateUniquenessHash, CandidateUniquenessEquals> UniqueCandidateSet;
+typedef std::unordered_map<FFState, Candidate*, boost::hash<FFState> > State2Node;
 
 class CubePruningRescorer {
 
@@ -501,7 +500,7 @@ struct NoPruningRescorer {
     node_states_.reserve(kRESERVE_NUM_NODES);
   }
 
-  typedef unordered_map<FFState, int, boost::hash<FFState> > State2NodeIndex;
+  typedef std::unordered_map<FFState, int, boost::hash<FFState> > State2NodeIndex;
 
   void ExpandEdge(const Hypergraph::Edge& in_edge, bool is_goal, State2NodeIndex* state2node) {
     const int arity = in_edge.Arity();

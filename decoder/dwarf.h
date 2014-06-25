@@ -11,11 +11,10 @@
 #include "trule.h"
 #include "tdict.h"
 #include <boost/functional/hash.hpp>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <boost/tuple/tuple.hpp>
 
 using namespace std;
-using namespace std::tr1;
 using namespace boost::tuples;
 using namespace boost;
 
@@ -221,12 +220,12 @@ public:
   int* neighborRight(int startidx, int endidx, bool* found);
 private:
   // Hash to avoid redundancy
-  unordered_map<vector<int>, int, boost::hash<vector<int> > > oris_hash;
-  unordered_map<vector<int>, int, boost::hash<vector<int> > > orit_hash;
-  unordered_map<vector<int>, int, boost::hash<vector<int> > > doms_hash;
-  unordered_map<vector<int>, int, boost::hash<vector<int> > > domt_hash;
-  unordered_map<vector<int>, vector<int>, boost::hash<vector<int> > > simplify_hash;
-  unordered_map<vector<int>, vector<int>, boost::hash<vector<int> > > prepare_hash;
+  std::unordered_map<vector<int>, int, boost::hash<vector<int> > > oris_hash;
+  std::unordered_map<vector<int>, int, boost::hash<vector<int> > > orit_hash;
+  std::unordered_map<vector<int>, int, boost::hash<vector<int> > > doms_hash;
+  std::unordered_map<vector<int>, int, boost::hash<vector<int> > > domt_hash;
+  std::unordered_map<vector<int>, vector<int>, boost::hash<vector<int> > > simplify_hash;
+  std::unordered_map<vector<int>, vector<int>, boost::hash<vector<int> > > prepare_hash;
  
   int _J; // effective source length;
   int _I; // effective target length;

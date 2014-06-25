@@ -2,8 +2,8 @@
 
 #include <queue>
 #include <iostream>
-#include <tr1/unordered_map>
-#include <tr1/unordered_set>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <boost/tuple/tuple.hpp>
 #include <boost/functional/hash.hpp>
@@ -17,7 +17,6 @@
 #include "array2d.h"
 
 using namespace std;
-using namespace std::tr1;
 using namespace boost::tuples;
 
 struct Coverage : public vector<bool> {
@@ -61,8 +60,8 @@ ostream& operator<<(ostream& os, const Coverage& cov) {
   return os << " gap=" << cov.GetFirstGap() << ']';
 }
 
-typedef unordered_map<Coverage, int, CoverageHash> CoverageNodeMap;
-typedef unordered_set<Coverage, CoverageHash> UniqueCoverageSet;
+typedef std::unordered_map<Coverage, int, CoverageHash> CoverageNodeMap;
+typedef std::unordered_set<Coverage, CoverageHash> UniqueCoverageSet;
 
 struct PhraseBasedTranslatorImpl {
   PhraseBasedTranslatorImpl(const boost::program_options::variables_map& conf) :

@@ -28,6 +28,11 @@ SparseVector<T> operator/(const SparseVector<T>& a, const double& b) {
   return result /= b;
 }
 
+template <class T>
+SparseVector<T> operator++(const SparseVector<T>& a) {
+  return a++;
+}
+
 #include "fdict.h"
 
 template <class O, typename T>

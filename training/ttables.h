@@ -2,7 +2,7 @@
 #define _TTABLES_H_
 
 #include <iostream>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include "m.h"
 #include "wordid.h"
@@ -11,8 +11,8 @@
 class TTable {
  public:
   TTable() {}
-  typedef std::tr1::unordered_map<WordID, double> Word2Double;
-  typedef std::tr1::unordered_map<WordID, Word2Double> Word2Word2Double;
+  typedef std::unordered_map<WordID, double> Word2Double;
+  typedef std::unordered_map<WordID, Word2Double> Word2Word2Double;
   inline double prob(const int& e, const int& f) const {
     const Word2Word2Double::const_iterator cit = ttable.find(e);
     if (cit != ttable.end()) {

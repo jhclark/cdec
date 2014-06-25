@@ -7,7 +7,7 @@
 #include <list>
 #include <iostream>
 #include <vector>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <boost/functional/hash.hpp>
 #include "sampler.h"
 #include "slice_sampler.h"
@@ -45,7 +45,7 @@ class CCRP_NoTable {
   }
 
   unsigned num_customers(const Dish& dish) const {
-    const typename std::tr1::unordered_map<Dish, unsigned, DishHash>::const_iterator it = custs_.find(dish);
+    const typename std::unordered_map<Dish, unsigned, DishHash>::const_iterator it = custs_.find(dish);
     if (it == custs_.end()) return 0;
     return it->second;
   }
@@ -105,7 +105,7 @@ class CCRP_NoTable {
       lp += lgamma(concentration) - lgamma(concentration + num_customers_) +
         custs_.size() * log(concentration);
       assert(std::isfinite(lp));
-      for (typename std::tr1::unordered_map<Dish, unsigned, DishHash>::const_iterator it = custs_.begin();
+      for (typename std::unordered_map<Dish, unsigned, DishHash>::const_iterator it = custs_.begin();
              it != custs_.end(); ++it) {
           lp += lgamma(it->second);
       }
@@ -134,7 +134,7 @@ class CCRP_NoTable {
   void Print(std::ostream* out) const {
     (*out) << "DP(alpha=" << concentration_ << ") customers=" << num_customers_ << std::endl;
     int cc = 0;
-    for (typename std::tr1::unordered_map<Dish, unsigned, DishHash>::const_iterator it = custs_.begin();
+    for (typename std::unordered_map<Dish, unsigned, DishHash>::const_iterator it = custs_.begin();
          it != custs_.end(); ++it) {
       (*out) << " " << it->first << "(" << it->second << " eating)";
       ++cc;
@@ -144,9 +144,9 @@ class CCRP_NoTable {
   }
 
   unsigned num_customers_;
-  std::tr1::unordered_map<Dish, unsigned, DishHash> custs_;
+  std::unordered_map<Dish, unsigned, DishHash> custs_;
 
-  typedef typename std::tr1::unordered_map<Dish, unsigned, DishHash>::const_iterator const_iterator;
+ typedef typename std::unordered_map<Dish, unsigned, DishHash>::const_iterator const_iterator;
   const_iterator begin() const {
     return custs_.begin();
   }

@@ -1,6 +1,6 @@
 #include "decoder.h"
 
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
 
@@ -238,7 +238,7 @@ struct DecoderImpl {
 
   // TODO this should be handled by an Observer
   void MaxTranslationSample(Hypergraph* hg, const int samples, const int k) {
-    unordered_map<string, int, boost::hash<string> > m;
+    std::unordered_map<string, int, boost::hash<string> > m;
     hg->PushWeightsToGoal();
     const int num_nodes = hg->nodes_.size();
     vector<SampleSet<prob_t> > ss(num_nodes);
@@ -256,7 +256,7 @@ struct DecoderImpl {
       ++m[trans];
     }
     vector<pair<int, string> > dist;
-    for (unordered_map<string, int, boost::hash<string> >::iterator i = m.begin();
+    for (std::unordered_map<string, int, boost::hash<string> >::iterator i = m.begin();
            i != m.end(); ++i) {
       dist.push_back(make_pair(i->second, i->first));
     }

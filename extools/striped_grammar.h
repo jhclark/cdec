@@ -4,7 +4,6 @@
 #include <iostream>
 #include <boost/functional/hash.hpp>
 #include <vector>
-#include <tr1/unordered_map>
 #include "sparse_vector.h"
 #include "wordid.h"
 #include "tdict.h"
@@ -44,7 +43,7 @@ inline void WriteAnonymous(const std::vector<WordID>& v, std::ostream* os) {
   }
 }
 
-typedef std::tr1::unordered_map<std::vector<WordID>, RuleStatistics, boost::hash<std::vector<WordID> > > ID2RuleStatistics;
+typedef std::unordered_map<std::vector<WordID>, RuleStatistics, boost::hash<std::vector<WordID> > > ID2RuleStatistics;
 
 struct StripedGrammarLexer {
   typedef void (*GrammarCallback)(WordID lhs, const std::vector<WordID>& src_rhs, const ID2RuleStatistics& rules, void *extra);

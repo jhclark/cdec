@@ -2,8 +2,8 @@
 
 #include <vector>
 #include <algorithm>
-#include <tr1/unordered_map>
-#include <tr1/unordered_set>
+#include <unordered_map>
+#include <unordered_set>
 
 #include <boost/tuple/tuple.hpp>
 #include <boost/functional/hash.hpp>
@@ -14,7 +14,6 @@
 
 using boost::tuple;
 using namespace std;
-using namespace std::tr1;
 
 namespace Hack {
 
@@ -139,8 +138,8 @@ struct CandidateUniquenessEquals {
   }
 };
 
-typedef unordered_set<const Candidate*, CandidateUniquenessHash, CandidateUniquenessEquals> UniqueCandidateSet;
-typedef unordered_map<vector<WordID>, Candidate*, boost::hash<vector<WordID> > > State2Node;
+typedef std::unordered_set<const Candidate*, CandidateUniquenessHash, CandidateUniquenessEquals> UniqueCandidateSet;
+typedef std::unordered_map<vector<WordID>, Candidate*, boost::hash<vector<WordID> > > State2Node;
 
 class MaxTransBeamSearch {
 

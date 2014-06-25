@@ -17,9 +17,7 @@
 #include <vector>
 
 #include <boost/static_assert.hpp>
-#include <tr1/unordered_map> // use tr1 instead of boost since dwarf.h already uses tr1
-
-using namespace std::tr1;
+#include <unordered_map>
 
 #if HAVE_BOOST_ARCHIVE_TEXT_OARCHIVE_HPP
 #include <boost/serialization/map.hpp>
@@ -72,7 +70,7 @@ BOOST_STATIC_ASSERT(sizeof(PairIntT<float>) == sizeof(std::pair<int,float>));
 template <typename T, int LOCAL_MAX = (sizeof(T) == sizeof(float) ? 15 : 7)>
 class FastSparseVector {
  public:
-  typedef unordered_map<int, T> FastMapType;
+  typedef std::unordered_map<int, T> FastMapType;
   //typedef std::map<int, T> FastMapType;
 
   struct const_iterator {

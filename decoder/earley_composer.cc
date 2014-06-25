@@ -4,7 +4,7 @@
 #include <fstream>
 #include <map>
 #include <queue>
-#include <tr1/unordered_set>
+#include <unordered_set>
 
 #include <boost/shared_ptr.hpp>
 #include <boost/program_options.hpp>
@@ -19,7 +19,6 @@
 using boost::shared_ptr;
 namespace po = boost::program_options;
 using namespace std;
-using namespace std::tr1;
 
 // Define the following macro if you want to see lots of debugging output
 // when you run the chart parser
@@ -455,10 +454,10 @@ class EarleyComposerImpl {
     const FSTNode* q = passive->q;
     const FSTNode* next_r = passive->r;
     const Edge query(q);
-    const pair<unordered_multiset<const Edge*, REdgeHash, REdgeEquals>::iterator,
-         unordered_multiset<const Edge*, REdgeHash, REdgeEquals>::iterator > p =
+    const pair<std::unordered_multiset<const Edge*, REdgeHash, REdgeEquals>::iterator,
+	       std::unordered_multiset<const Edge*, REdgeHash, REdgeEquals>::iterator > p =
       active_edges.equal_range(&query);
-    for (unordered_multiset<const Edge*, REdgeHash, REdgeEquals>::iterator it = p.first;
+    for (std::unordered_multiset<const Edge*, REdgeHash, REdgeEquals>::iterator it = p.first;
          it != p.second; ++it) {
       const Edge* active = *it;
 #ifdef DEBUG_CHART_PARSER
@@ -483,10 +482,10 @@ class EarleyComposerImpl {
     cerr << "  merge active with passives: ACT=" << *active << endl;
 #endif
     const Edge query(active->r, 1);
-    const pair<unordered_multiset<const Edge*, QEdgeHash, QEdgeEquals>::iterator,
-         unordered_multiset<const Edge*, QEdgeHash, QEdgeEquals>::iterator > p =
+    const pair<std::unordered_multiset<const Edge*, QEdgeHash, QEdgeEquals>::iterator,
+         std::unordered_multiset<const Edge*, QEdgeHash, QEdgeEquals>::iterator > p =
       passive_edges.equal_range(&query);
-    for (unordered_multiset<const Edge*, QEdgeHash, QEdgeEquals>::iterator it = p.first;
+    for (std::unordered_multiset<const Edge*, QEdgeHash, QEdgeEquals>::iterator it = p.first;
          it != p.second; ++it) {
       const Edge* passive = *it;
       const EGrammarNode* next_dot = active->dot->Extend(passive->cat);
@@ -608,12 +607,12 @@ class EarleyComposerImpl {
   Hypergraph::Node* goal_node;
   EdgeQueue exp_agenda;
   EdgeQueue agenda;
-  unordered_map<size_t, Hypergraph::Node*> tps2node;
-  unordered_map<const Edge*, Hypergraph::Node*, UniqueEdgeHash, UniqueEdgeEquals> edge2node;
-  unordered_set<const Traversal*, UniqueTraversalHash, UniqueTraversalEquals> all_traversals;
-  unordered_set<const Edge*, UniqueEdgeHash, UniqueEdgeEquals> all_edges;
-  unordered_multiset<const Edge*, QEdgeHash, QEdgeEquals> passive_edges;
-  unordered_multiset<const Edge*, REdgeHash, REdgeEquals> active_edges;
+  std::unordered_map<size_t, Hypergraph::Node*> tps2node;
+  std::unordered_map<const Edge*, Hypergraph::Node*, UniqueEdgeHash, UniqueEdgeEquals> edge2node;
+  std::unordered_set<const Traversal*, UniqueTraversalHash, UniqueTraversalEquals> all_traversals;
+  std::unordered_set<const Edge*, UniqueEdgeHash, UniqueEdgeEquals> all_edges;
+  std::unordered_multiset<const Edge*, QEdgeHash, QEdgeEquals> passive_edges;
+  std::unordered_multiset<const Edge*, REdgeHash, REdgeEquals> active_edges;
   vector<Edge*> free_list_;
   vector<Traversal*> traversal_free_list_;
   const WordID start_cat_;

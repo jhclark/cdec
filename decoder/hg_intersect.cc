@@ -1,7 +1,7 @@
 #include "hg_intersect.h"
 
 #include <vector>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include "fast_lexical_cast.hpp"
 #include <boost/functional/hash.hpp>
 
@@ -13,11 +13,10 @@
 #include "bottom_up_parser.h"
 
 using boost::lexical_cast;
-using namespace std::tr1;
 using namespace std;
 
 struct RuleFilter {
-  unordered_map<vector<WordID>, bool, boost::hash<vector<WordID> > > exists_;
+  std::unordered_map<vector<WordID>, bool, boost::hash<vector<WordID> > > exists_;
   bool true_lattice;
   RuleFilter(const Lattice& target, int max_phrase_size) {
     true_lattice = false;
