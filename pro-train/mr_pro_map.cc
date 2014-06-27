@@ -143,7 +143,7 @@ struct HypInfoHasher {
   }
 };
 
-void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<int> fid_to_kbest_ids) {
+void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<int>& fid_to_kbest_ids) {
   WriteFile wf(file);
   ostream& out = *wf.stream();
   out.precision(10);
