@@ -378,7 +378,7 @@ while (1){
         # create the feature table before running any map tasks
         # create a mapping from sequential integers to feature names so that we can store
         # the k-best list in a slightly more compact way
-        my $featTableScript = "cat $dir/splag.$im1/mapinput.* | $FEAT_TABLE > $dir/kbest/kbest.feats.gz";
+        my $featTableScript = "cat $dir/splag.$im1/mapinput.* | $FEAT_TABLE $dir/kbest/kbest.feats.gz";
         check_bash_call($featTableScript);
 
         # run map tasks in parallel
