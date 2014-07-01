@@ -21,8 +21,11 @@ int main(int argc, char** argv) {
   std::unordered_map<std::string, int> seen;
 
   const std::string& featsFile = argv[1];
-  std::cerr << "Reading previous feature mapping from " << featsFile << std::endl;
-  {
+
+  // feats file will not exist for first iteration
+  std::ifstream checker(featsFile);
+  if (checker.good()) {
+    std::cerr << "Reading previous feature mapping from " << featsFile << std::endl;
     ReadFile in_read(featsFile);
     std::istream &in=*in_read.stream();
     while(in) {
