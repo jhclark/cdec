@@ -230,8 +230,8 @@ void ReadKBest(const string& file, const std::unordered_map<int, string>& feat_n
   while(getline(in, cand)) {
     getline(in, feats);
     assert(in);
-    std::cerr << "CAND: " << cand << std::endl;
-    std::cerr << "FEATS: " << feats << std::endl;
+    //std::cerr << "CAND: " << cand << std::endl;
+    //std::cerr << "FEATS: " << feats << std::endl;
     kbest->push_back(HypInfo());
     TD::ConvertSentence(cand, &kbest->back().hyp);
     boost::trim(feats);
