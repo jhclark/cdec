@@ -200,7 +200,7 @@ void ParseSparseVector(string& line, const std::unordered_map<int, string>& feat
           cerr << "Invalid feature ID: " << kbest_fid << endl;
           abort();
         }
-        if (kbest_fid == 0 || kbest_fid >= feat_names.size()) {
+        if (kbest_fid == 0 || feat_names.find(kbest_fid) == feat_names.end()) {
           cerr << "ERROR: Got an old feature ID that is out of range for the feature names file: " << kbest_fid << endl;
           abort();
         }
@@ -368,8 +368,7 @@ void ReadFeatureNames(const std::string& filename, std::unordered_map<int, std::
     ReadFile in_read(filename);
     istream& in = *in_read.stream();
     string line;
-    
-    
+
     // add the invalid feature ID zero
     feat_names->clear();
     while (getline(in, line)) {
