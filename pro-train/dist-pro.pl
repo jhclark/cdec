@@ -310,6 +310,7 @@ while (1){
 	print STDERR "RUNNING DECODER AT ";
 	print STDERR unchecked_output("date");
 	my $im1 = $iteration - 1;
+	my $im2 = $iteration - 2;
 	my $weightsFile="$dir/weights.$im1";
         push @allweights, "-w $dir/weights.$im1";
         `rm -f $dir/hgs/*.gz`;
@@ -378,7 +379,7 @@ while (1){
         # create the feature table before running any map tasks
         # create a mapping from sequential integers to feature names so that we can store
         # the k-best list in a slightly more compact way
-        my $featTableScript = "cat $dir/splag.$im1/mapinput.* | $FEAT_TABLE $dir/kbest/kbest.feats.gz";
+        my $featTableScript = "cat $dir/splag.$im1/mapinput.* | $FEAT_TABLE $dir/kbest/kbest.feats.$im2.gz $dir/kbest/kbest.feats.$im1.gz";
         check_bash_call($featTableScript);
 
         # run map tasks in parallel
@@ -567,9 +568,10 @@ while (1){
             check_bash_call("tar -c splag.$im1 | /home/jhclark/software/pbzip2-1.1.6/pbzip2 -c > splag.$im1.bz2");
             `rm -rf splag.$im1`;
             # TODO: HACK: Move these files off the SDD and back to a filesystem with more free space
-            ###if (defined $ENV{'swork'}) {
-            ###    check_bash_call("mv splag.$im1.bz2 $ENV{'swork'}/");
-            ###}
+            if (defined $ENV{'swork'}) {
+                my $swork = $ENV{'swork'};
+                check_bash_call("mv splag.$im1.bz2 $swork/");
+            }
         }
 
 	$lastPScore = $score;
