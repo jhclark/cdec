@@ -12,29 +12,28 @@
 
 int main(int argc, char** argv) {
 
-  if (argc != 2) {
-    std::cerr << "Usage: program kbest/kbest.feats.gz" << std::endl;
+  if (argc != 3) {
+    std::cerr << "Usage: program kbest/kbest.feats.old.gz kbest/kbest.feats.new.gz" << std::endl;
     return 1;
   }
 
   int next_feat_id = 1;
   std::unordered_map<std::string, int> seen;
 
-  const std::string& featsFile = argv[1];
+  const std::string& oldFeatsFile = argv[1];
+  const std::string& featsFile = argv[2];
 
   // feats file will not exist for first iteration
-  std::ifstream checker(featsFile);
+  std::ifstream checker(oldFeatsFile);
   if (checker.good()) {
-    std::cerr << "Reading previous feature mapping from " << featsFile << std::endl;
-    ReadFile in_read(featsFile);
+    std::cerr << "Reading previous feature mapping from " << oldFeatsFile << std::endl;
+    ReadFile in_read(oldFeatsFile);
     std::istream &in=*in_read.stream();
     while(in) {
       std::string line;
       getline(in, line);
       
       if (line.empty()) continue;
-
-      std::cerr << line << std::endl;
 
       std::istringstream is(line);
       int feat_id;
