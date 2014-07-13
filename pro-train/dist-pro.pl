@@ -568,9 +568,9 @@ while (1){
             check_bash_call("tar -c splag.$im1 | /home/jhclark/software/pbzip2-1.1.6/pbzip2 -c > splag.$im1.bz2");
             `rm -rf splag.$im1`;
             # TODO: HACK: Move these files off the SDD and back to a filesystem with more free space
-            if (defined $ENV{'swork'}) {
-                my $swork = $ENV{'swork'};
-                check_bash_call("mv splag.$im1.bz2 $swork/");
+            if (defined $ENV{'pwork'}) {
+                my $pwork = $ENV{'pwork'};
+                check_bash_call("mv splag.$im1.bz2 $pwork/");
             }
         }
 
