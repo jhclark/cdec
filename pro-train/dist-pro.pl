@@ -403,21 +403,21 @@ while (1){
 		$client_name =~ s/mapinput.//;
 		$client_name = "pro.$client_name";
 		$mapoutput =~ s/mapinput/mapoutput/;
-		push @mapoutputs, "$dir/splag.$im1/$mapoutput";
+		push @mapoutputs, "$dir/splag.$im1/$mapoutput.gz";
 		$o2i{"$dir/splag.$im1/$mapoutput"} = "$dir/splag.$im1/$shard";
                 my $kbest_hammer_flag = "";
                 if ($prune_kbest_by_length_hammer) {
                     $kbest_hammer_flag = "--prune_kbest_by_length_hammer 1";
                 }
 
-		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest -k $kbest_size $kbest_hammer_flag --kbest_feats_file $dir/kbest/kbest.feats.$im1.gz < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
+		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest -k $kbest_size $kbest_hammer_flag --kbest_feats_file $dir/kbest/kbest.feats.$im1.gz < $dir/splag.$im1/$shard | gzip > $dir/splag.$im1/$mapoutput.gz";
 		if ($use_make) {
 			my $script_file = "$dir/scripts/map.$shard";
 			open F, ">$script_file" or die "Can't write $script_file: $!";
 			print F "#!/bin/bash\n";
 			print F "$script\n";
 			close F;
-			my $output = "$dir/splag.$im1/$mapoutput";
+			my $output = "$dir/splag.$im1/$mapoutput.gz";
 			push @mkouts, $output;
 			chmod(0755, $script_file) or die "Can't chmod $script_file: $!";
 			if ($first_shard) { print STDERR "$script\n"; $first_shard=0; }
@@ -496,7 +496,7 @@ while (1){
 
 	print STDERR "\nRUNNING CLASSIFIER (REDUCER)\n";
 	print STDERR unchecked_output("date");
-	$cmd="cat @dev_outs | $REDUCER -w $dir/weights.$im1 -C $reg -c $conj_reg -y $reg_previous --interpolate_with_weights $psi";
+	$cmd="zcat -f @dev_outs | $REDUCER -w $dir/weights.$im1 -C $reg -c $conj_reg -y $reg_previous --interpolate_with_weights $psi";
 	if ($tune_regularizer) {
 	   $cmd .= " -T -t $dev_test_file";
 	}
