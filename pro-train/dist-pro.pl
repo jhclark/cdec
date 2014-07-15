@@ -410,7 +410,7 @@ while (1){
                     $kbest_hammer_flag = "--prune_kbest_by_length_hammer 1";
                 }
 
-		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest -k $kbest_size $kbest_hammer_flag < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
+		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest -k $kbest_size $kbest_hammer_flag --kbest_feats_file $dir/kbest/kbest.feats.$im1.gz < $dir/splag.$im1/$shard > $dir/splag.$im1/$mapoutput";
 		if ($use_make) {
 			my $script_file = "$dir/scripts/map.$shard";
 			open F, ">$script_file" or die "Can't write $script_file: $!";

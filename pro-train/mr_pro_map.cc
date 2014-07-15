@@ -89,6 +89,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("best_pairs,X", po::value<unsigned>()->default_value(50u), "Number of pairs, ranked by magnitude of objective delta, to retain (Xi)")
         ("prune_kbest_by_length_hammer", po::value<int>()->default_value(0), "Require the 'LengthHammer' feature to have a value of zero for all extracted k-best entries? (prior to diffing) -- Use 0 for false and 1 for true")
         ("random_seed,S", po::value<uint32_t>(), "Random seed (if not specified, /dev/random will be used)")
+        ("kbest_feats_file", po::value<string>(), "Kbest feature ids file")
         ("help,h", "Help");
   po::options_description dcmdline_options;
   dcmdline_options.add(opts);
@@ -152,6 +153,7 @@ void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<i
     const SparseVector<weight_t>& feats = info.x;
 
     out << TD::GetString(info.hyp) << endl;
+    // TODO: Sort feature ids to make them compress better
     //out << feats << endl;
     for (auto pair : feats) {
       // note: we're writing the integer feature ID instead of the name
@@ -428,9 +430,7 @@ int main(int argc, char** argv) {
 
   string kbest_repo = conf["kbest_repository"].as<string>();
 
-  ostringstream os_mapping;
-  os_mapping << kbest_repo << "/kbest.feats.gz";
-  const string kbest_mapping_file = os_mapping.str();
+  const string kbest_mapping_file = conf["kbest_feats_file"].as<string>();
   std::unordered_map<int, string> old_feat_names;
   std::vector<int> fid_to_kbest_ids;
   ReadFeatureNames(kbest_mapping_file, &old_feat_names, &fid_to_kbest_ids);
