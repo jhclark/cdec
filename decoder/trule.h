@@ -144,7 +144,7 @@ class TRule {
   std::vector<WordID> f_;
   WordID lhs_;
   SparseVector<double> scores_;
-x
+
   char arity_;
 
   // these attributes are application-specific and should probably be refactored

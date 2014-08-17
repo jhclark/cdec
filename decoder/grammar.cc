@@ -88,11 +88,6 @@ const GrammarIter* TextGrammar::GetRoot() const {
 }
 
 void TextGrammar::AddRule(const TRulePtr& rule, const unsigned int ctf_level, const TRulePtr& coarse_rule) {
-
-  // do on-the-fly feature transformations (discretization and conjunction)
-  SparseVector<double> replacement_scores = FeatureTransformer.Transform(rule.scores_);
-  rule.scores_ = replacement_scores;
-
   if (ctf_level > 0) {
     // assume that coarse_rule is already in tree (would be safer to check)
     if (coarse_rule->fine_rules_ == 0)

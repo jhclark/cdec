@@ -153,19 +153,23 @@ void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<i
     const SparseVector<weight_t>& feats = info.x;
 
     out << TD::GetString(info.hyp) << endl;
-
-    // TODO: Here, we save only the initial feature values
-    // (ignoring the transformed/discretzied/conjoined features)
-    // to save space on disk
-    for (std::pair<int, double> pair& : feats) {
-      int fid = pair.first;
-      double feat_value = pair.second;
-      if (FeatureTransformer::IsInitialFeature(fid)) {
+    // TODO: Sort feature ids to make them compress better
+    //out << feats << endl;
+    for (auto pair : feats) {
+      // note: we're writing the integer feature ID instead of the name
+      // so that gzip gets a better compression ratio (~5X for Jon's large feature sets)
+      // we'll also need the full mapping of feature ID's to feature names to read this file later
+      // since this mapping is valid only within the current process
+      assert(pair.first != 0);
+      if (pair.first >= fid_to_kbest_ids.size()) {
+        // non-grammar features (e.g. Glue) may not be in the mapping
         const string& feat_name = FD::Convert(pair.first);
         out << " " << "_" << feat_name  << "=" << pair.second;
+      } else {
+        int kbest_feat_id = fid_to_kbest_ids.at(pair.first);
+        out << " " << kbest_feat_id << "=" << pair.second;
       }
     }
-
     out << endl;
   }
 }
