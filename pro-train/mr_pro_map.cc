@@ -161,8 +161,13 @@ void WriteKBest(const string& file, const vector<HypInfo>& kbest, const vector<i
       // we'll also need the full mapping of feature ID's to feature names to read this file later
       // since this mapping is valid only within the current process
       assert(pair.first != 0);
-      if (pair.first >= fid_to_kbest_ids.size()) {
+      if (fid_to_kbest_ids.size() == 0) {
+        // if we didn't load the feature ID mapping file, don't append _ to feature names
+        const string& feat_name = FD::Convert(pair.first);
+        out << " " << feat_name  << "=" << pair.second;
+      } else if (pair.first >= fid_to_kbest_ids.size()) {
         // non-grammar features (e.g. Glue) may not be in the mapping
+        // TODO: XXX: This is possibly broken...
         const string& feat_name = FD::Convert(pair.first);
         out << " " << "_" << feat_name  << "=" << pair.second;
       } else {
