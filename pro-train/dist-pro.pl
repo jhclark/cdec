@@ -379,8 +379,8 @@ while (1){
         # create the feature table before running any map tasks
         # create a mapping from sequential integers to feature names so that we can store
         # the k-best list in a slightly more compact way
-        my $featTableScript = "cat $dir/splag.$im1/mapinput.* | $FEAT_TABLE $dir/kbest/kbest.feats.$im2.gz $dir/kbest/kbest.feats.$im1.gz";
-        check_bash_call($featTableScript);
+###        my $featTableScript = "cat $dir/splag.$im1/mapinput.* | $FEAT_TABLE $dir/kbest/kbest.feats.$im2.gz $dir/kbest/kbest.feats.$im1.gz";
+###        check_bash_call($featTableScript);
 
         # run map tasks in parallel
 	my $joblist = "";
@@ -410,6 +410,7 @@ while (1){
                     $kbest_hammer_flag = "--prune_kbest_by_length_hammer 1";
                 }
 
+                # Note: When kbest.feats.XXX.gz isn't present, we just skip reading the file and assume that the kbest repo contains actual feature names intead of feature ID's
 		my $script = "$MAPPER -s $srcFile -m $metric $refs_comma_sep -w $inweights -K $dir/kbest -k $kbest_size $kbest_hammer_flag --kbest_feats_file $dir/kbest/kbest.feats.$im1.gz < $dir/splag.$im1/$shard | gzip > $dir/splag.$im1/$mapoutput.gz";
 		if ($use_make) {
 			my $script_file = "$dir/scripts/map.$shard";
