@@ -7,6 +7,7 @@
 
 #include <boost/program_options.hpp>
 #include <boost/program_options/variables_map.hpp>
+#include <boost/algorithm/string.hpp>
 
 #include "fast_oscar.h"
 
@@ -47,6 +48,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("graph_regularization_strength,G",po::value<double>()->default_value(0.0), "l2 regularization strength for graph regularizer")
         ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C; this line means 'feat1 is penalized for being dissimilar from feat2 proportional to weight')")
         ("tangent_regularization_file,L",po::value<string>(), "file to read tangent regularization configuration from (format: 'reg_strength window_size feat1_name feat2_name [feat3_name...]' -- weights are per line, not cumulative with C; this line means 'feat1...featN participate in a preferably smooth line (the line implied by the features' weights). window_size features on either side of each segment of this line will be used for approximating a tangent line and each line segment will receive a penalty with strength reg_strength for being dissimilar to that slope)")
+        ("oscar_feats_file,O",po::value<string>(), "file to read OSCAR features from. If specified, only feature names listed in this file will have the OSCAR L1 and L_inf regularization terms applied to them.")
         ("regularize_by_group,x",po::bool_switch()->default_value(false), "For feature groups (lines) defined in the tangent_regularization_file, apply the regularizer to the average weight over all bins.")
         ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer, but not weighted by C)")
         ("regularize_to_weights,y",po::value<double>()->default_value(5000.0), "Differences in learned weights to previous weights are penalized with an l2 penalty with this strength; 0.0 = no effect")
@@ -501,6 +503,41 @@ void ReadFeatMatrix(const string& filename,
   }
 }
 
+// reads a file that lists features that should be included in OSCAR regularization
+void ReadOscarFeaturesFile(const string& filename,
+                           vector<bool>* oscar_feats) {
+
+  if (!SILENT) cerr << "Reading OSCAR features from " << filename << endl;
+  ReadFile in_file(filename);
+  istream& in = *in_file.stream();
+  assert(in);
+
+  // start by applying OSCAR to no features
+  // then set to true as we observe them in the file
+  for (size_t i = 0; i < oscar_feats->size(); ++i) {
+    (*oscar_feats)[i] = false;
+  }
+
+  string buf;
+  while (in) {
+
+    getline(in, buf);
+    if (buf.size() == 0) continue;
+    if (buf[0] == '#') continue;
+    if (buf[0] == ' ') {
+      cerr << "OSCAR feats file lines may not start with whitespace.\n" << buf << endl;
+      abort();
+    }
+
+    boost::trim(buf);
+    const int fid = FD::Convert(buf);
+    if (oscar_feats->size() <= fid) {
+      oscar_feats->resize(fid + 1);
+    }
+    (*oscar_feats)[fid] = true;
+  }
+}
+
 void ReadTangentRegularizationFile(string filename, vector<LineFeatureGroup>* lines) {
 
   if (!SILENT) cerr << "Reading tangent regularization configuration from " << filename << endl;
@@ -715,11 +752,19 @@ int main(int argc, char** argv) {
   unsigned memory_buffers = conf["memory_buffers"].as<unsigned>();
   LBFGSOptimizer lbfgs_opt(FD::NumFeats(), memory_buffers);
 
+  // features that should be included in OSCAR
+  // by default, apply OSCAR to all features, unless the user specifies a file that lists oscar features
+  vector<bool> oscar_feats(FD::NumFeats(), true);
+  string oscar_features_file = conf["oscar_feats_file"].as<string>();
+  if (conf.count("oscar_feats_file")) {
+    ReadOscarFeaturesFile(oscar_features_file, &oscar_feats);
+  }
+
   double init_learning_rate = conf["init_learning_rate"].as<double>();
   double nonadapted_learning_rate = conf["nonadapted_learning_rate"].as<double>();
   int gradient_buffer_size = conf["gradient_buffer_size"].as<int>();
   int num_iterations = conf["num_iterations"].as<int>();
-  AdaGradOscarOptimizer oscar_opt(C_1, C_inf, init_learning_rate, nonadapted_learning_rate, gradient_buffer_size, num_iterations, prev_x, conf["verbose"].as<bool>());
+  AdaGradOscarOptimizer oscar_opt(C_1, C_inf, init_learning_rate, nonadapted_learning_rate, gradient_buffer_size, num_iterations, prev_x, oscar_feats, conf["verbose"].as<bool>());
 
   double tppl = 0.0;
   vector<pair<double,double> > sp;
