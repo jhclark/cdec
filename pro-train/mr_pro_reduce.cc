@@ -43,6 +43,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("regularization_strength,C",po::value<double>()->default_value(500.0), "L2 regularization strength")
         ("L1_regularization_strength",po::value<double>()->default_value(0.0), "L1 regularization strength")
         ("Linf_regularization_strength",po::value<double>()->default_value(0.0), "Pairwise L_infinity regularization strength")
+        ("use_Linf_in_weights,u", po::bool_switch()->default_value(false), "Use Linf regularizer when determining final weight values and when clipping feature weights? Otherwise, just use it as a means for causing weights to be closer to each other when creating feature groups so that we get less degrees of freedom, but not necessarily fewer active features. (Recommended/default: false)")
         ("conjunction_regularization_strength,c",po::value<double>()->default_value(0.0), "l2 regularization strength applied only to conjoined features (any feature that contains a double underscore)")
         ("normalize_regularizer,n", po::bool_switch()->default_value(false), "Normalize regularization constant C by the number of features")
         ("graph_regularization_strength,G",po::value<double>()->default_value(0.0), "l2 regularization strength for graph regularizer")
@@ -137,6 +138,9 @@ double ApplyRegularizationTerms(const double C,
                                 const vector<LineFeatureGroup>& lines,
                                 const bool regularize_by_group,
                                 vector<weight_t>* g) {
+  if (weights.size() != g->size()) {
+    std::cerr << "Weights has size " << weights.size() << "; gradient vec has size " << g->size() << std::endl; 
+  }
   assert(weights.size() == g->size());
   double reg = 0;
   for (size_t i = 0; i < weights.size(); ++i) {
@@ -317,13 +321,14 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
                        const vector<SparseVector<weight_t> >& graph_reg_matrix,
                        const vector<LineFeatureGroup>& lines,
                        const bool regularize_by_group,
+		       const bool throws_on_convergence,
                        int dominant_feat_id,
                        Optimizer& opt,
                        vector<weight_t>* px) {
 
   vector<weight_t>& x = *px;
-  vector<weight_t> vg(FD::NumFeats(), 0.0);
-  vector<weight_t> vg_noreg(FD::NumFeats(), 0.0);
+  vector<weight_t> vg(x.size(), 0.0);
+  vector<weight_t> vg_noreg(x.size(), 0.0);
   bool converged = false;
 
   int iteration = 1;
@@ -412,8 +417,13 @@ double LearnParameters(const vector<pair<bool, SparseVector<weight_t> > >& train
       //Weights::WriteToFile("-", x);
       
     } catch (...) {
-      cerr << "Exception caught, assuming convergence is close enough...\n";
-      converged = true;
+      if (throws_on_convergence) {
+	// hack specific to lbfgs implementatino
+	cerr << "Exception caught, assuming convergence is close enough...\n";
+	converged = true;
+      } else {
+	throw;
+      }
     }
     if (fabs(x[0]) > MAX_BIAS) {
       cerr << "Biased model learned. Are your training instances wrong?\n";
@@ -518,9 +528,9 @@ void ReadOscarFeaturesFile(const string& filename,
     (*oscar_feats)[i] = false;
   }
 
+  int count = 0;
   string buf;
   while (in) {
-
     getline(in, buf);
     if (buf.size() == 0) continue;
     if (buf[0] == '#') continue;
@@ -530,12 +540,18 @@ void ReadOscarFeaturesFile(const string& filename,
     }
 
     boost::trim(buf);
+    if (boost::contains(buf, " ")) {
+      cerr << "Feature names in OSCAR feats file cannot contain spaces" << endl;
+      abort();
+    }
     const int fid = FD::Convert(buf);
     if (oscar_feats->size() <= fid) {
-      oscar_feats->resize(fid + 1);
+      oscar_feats->resize(fid+1);
     }
     (*oscar_feats)[fid] = true;
+    ++count;
   }
+  cerr << "Read " << count << " OSCAR features" << endl;
 }
 
 void ReadTangentRegularizationFile(string filename, vector<LineFeatureGroup>* lines) {
@@ -572,11 +588,11 @@ void ReadTangentRegularizationFile(string filename, vector<LineFeatureGroup>* li
 
     // read the regularizer strength C
     group.C = strtod(toks.at(0).c_str(), NULL);
-    cerr << "Parsed C " << group.C << endl;
+    //cerr << "Parsed C " << group.C << endl;
 
     // read the window size
     group.window_size = atoi(toks.at(1).c_str());
-    cerr << "Parsed window size " << group.window_size << endl;
+    //cerr << "Parsed window size " << group.window_size << endl;
 
     // read each feature that is part of this line
     for (size_t i = 2; i < toks.size(); i++) {
@@ -755,8 +771,8 @@ int main(int argc, char** argv) {
   // features that should be included in OSCAR
   // by default, apply OSCAR to all features, unless the user specifies a file that lists oscar features
   vector<bool> oscar_feats(FD::NumFeats(), true);
-  string oscar_features_file = conf["oscar_feats_file"].as<string>();
   if (conf.count("oscar_feats_file")) {
+    string oscar_features_file = conf["oscar_feats_file"].as<string>();
     ReadOscarFeaturesFile(oscar_features_file, &oscar_feats);
   }
 
@@ -764,7 +780,9 @@ int main(int argc, char** argv) {
   double nonadapted_learning_rate = conf["nonadapted_learning_rate"].as<double>();
   int gradient_buffer_size = conf["gradient_buffer_size"].as<int>();
   int num_iterations = conf["num_iterations"].as<int>();
-  AdaGradOscarOptimizer oscar_opt(C_1, C_inf, init_learning_rate, nonadapted_learning_rate, gradient_buffer_size, num_iterations, prev_x, oscar_feats, conf["verbose"].as<bool>());
+  bool use_Linf_in_weights = conf["use_Linf_in_weights"].as<bool>();
+  cerr << "Use Linf in weights and for clipping? (Otherwise, just use it for grouping in proximal space) " << use_Linf_in_weights << endl;
+  AdaGradOscarOptimizer oscar_opt(C_1, C_inf, use_Linf_in_weights, init_learning_rate, nonadapted_learning_rate, gradient_buffer_size, num_iterations, prev_x, oscar_feats, conf["verbose"].as<bool>());
 
   double tppl = 0.0;
   vector<pair<double,double> > sp;
@@ -778,10 +796,10 @@ int main(int argc, char** argv) {
       cerr << "C=" << C << "\tT=" <<T << endl;
       if (optimizer_name == "lbfgs") {
         tppl = LearnParameters(training, testing, C, T, prev_x,
-                               feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, lbfgs_opt, &x);
+                               feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, true, dominant_feat_id, lbfgs_opt, &x);
       } else {
         tppl = LearnParameters(training, testing, C, T, prev_x,
-                               feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, oscar_opt, &x);
+                               feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, false, dominant_feat_id, oscar_opt, &x);
         
       }
       sp.push_back(make_pair(C, tppl));
@@ -809,10 +827,10 @@ int main(int argc, char** argv) {
 
   if (optimizer_name == "lbfgs") {
     tppl = LearnParameters(training, testing, C, T, prev_x,
-                           feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, lbfgs_opt, &x);
+                           feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, true, dominant_feat_id, lbfgs_opt, &x);
   } else {
     tppl = LearnParameters(training, testing, C, T, prev_x,
-                           feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, dominant_feat_id, oscar_opt, &x);
+                           feat_reg, graph_reg_C, graph_reg_matrix, lines, regularize_by_group, false, dominant_feat_id, oscar_opt, &x);
   }
 
   if (conf.count("weights")) {
