@@ -85,7 +85,7 @@ my $tangent_reg_file = ""; # tangent regularization
 my $dominant_feat = ""; # the name of a single feature that should receive much greater weight than all other features (e.g. 100X)
 my $prune_kbest_by_length_hammer = 0; # Remove k-best entries with non-zero length hammer?
 my $regularize_by_group = 0; # evenly distribute basic L2 regularizer C over features instead of applying it individually to each feature?
-my $use_Linf_in_weights = 1;
+my $use_Linf_in_weights = 0;
 
 my $kbest_size = 1500;
 
