@@ -46,12 +46,15 @@ struct State {
     assert(order <= MAX_ORDER);
     size_t om1 = order - 1;
     assert(om1 > 0);
-    for (char i = 1; i < om1; ++i) state[i - 1]= other.state[i];
-    state[om1 - 1] = extend;
+    for (size_t i = 1; i < order; ++i)
+      state[i - 1] = other.state[i];
+    state[order - 1] = extend;
   }
   const WordID& operator[](size_t i) const { return state[i]; }
   WordID& operator[](size_t i) { return state[i]; }
-  WordID state[MAX_ORDER];
+
+  // all data members:
+  WordID state[MAX_ORDER - 1];
 };
 }
 
@@ -125,7 +128,7 @@ class NgramDetectorImpl {
 
   inline const State<5> BeginSentenceState() const {
     State<5> state(order_);
-    state.state[0] = kSOS_;
+    state.state[order_-1] = kSOS_;
     return state;
   }
 
@@ -201,7 +204,9 @@ class NgramDetectorImpl {
     FidTree* ft = &fidroot_;
     int n = 0;
     WordID buf[10];
-    int ci = order_ - 1;
+    // read n-gram in reverse order, starting at position order_-1
+    // (note: this gets decremented before use)
+    int ci = order_;
     WordID curword = cur;
     if (DEBUG_FF_NGRAMS) std::cerr << "Firing features: "; PrintState(state);
 
@@ -316,7 +321,8 @@ class NgramDetectorImpl {
             if (remnant)
               SetIthUnscoredWord(num_estimated, cur_word, remnant);
             ++num_estimated;
-            (*est_feats) += p;
+            if (est_feats)
+              (*est_feats) += p;
           }
         }
         saw_eos = GetFlag(astate, HAS_EOS_ON_RIGHT);
@@ -363,7 +369,8 @@ class NgramDetectorImpl {
           if (remnant)
             SetIthUnscoredWord(num_estimated, cur_word, remnant);
           ++num_estimated;
-          (*est_feats) += p;
+          if (est_feats)
+            (*est_feats) += p;
         }
       }
     }
@@ -380,9 +387,11 @@ class NgramDetectorImpl {
   void FinalTraversal(const void* state, SparseVector<double>* feats) {
     if (DEBUG_FF_NGRAMS) std::cerr << "===FINAL TRAVERSAL===" << std::endl;
     if (add_sos_eos_) {  // rules do not produce <s> </s>, so do it here
-      SetRemnantLMState(BeginSentenceState(), dummy_state_);
-      SetHasFullContext(1, dummy_state_);
-      SetUnscoredSize(0, dummy_state_);
+      if (DEBUG_FF_NGRAMS) std::cerr << "FINAL TRAVERSAL ADD SOS/BOS" << std::endl;
+      //SetRemnantLMState(BeginSentenceState(), dummy_state_);
+      SetIthUnscoredWord(0, kSOS_, dummy_state_);
+      SetUnscoredSize(1, dummy_state_);
+      SetHasFullContext(false, dummy_state_);
       dummy_ants_[1] = state;
       LookupWords(*dummy_rule_, dummy_ants_, feats, NULL, NULL);
     } else {  // rules DO produce <s> ... </s>
