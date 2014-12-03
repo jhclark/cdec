@@ -46,9 +46,9 @@ struct State {
     assert(order <= MAX_ORDER);
     size_t om1 = order - 1;
     assert(om1 > 0);
-    for (size_t i = 1; i < order; ++i)
+    for (size_t i = 1; i < om1; ++i)
       state[i - 1] = other.state[i];
-    state[order - 1] = extend;
+    state[om1 - 1] = extend;
   }
   const WordID& operator[](size_t i) const { return state[i]; }
   WordID& operator[](size_t i) { return state[i]; }
@@ -128,7 +128,9 @@ class NgramDetectorImpl {
 
   inline const State<5> BeginSentenceState() const {
     State<5> state(order_);
-    state.state[order_-1] = kSOS_;
+    // state size is order - 1
+    // rightmost position is order - 2
+    state.state[order_-2] = kSOS_;
     return state;
   }
 
@@ -145,6 +147,8 @@ class NgramDetectorImpl {
   }
 
   void SetIthUnscoredWord(int i, const WordID index, void *state) const {
+    assert(index >= 0);
+    assert(index <= TD::NumWords());
     WordID* mem = reinterpret_cast<WordID*>(static_cast<char*>(state) + unscored_words_offset_);
     mem[i] = index;
   }
@@ -176,10 +180,7 @@ class NgramDetectorImpl {
     for (int i = n-1; i >= 0; --i) {
       os << (i != n-1 ? "_" : "");
       const string& tok = TD::Convert(buf[i]);
-      if (tok.find('=') == string::npos)
-        os << tok;
-      else
-        os << Escape(tok);
+      os << Escape(tok);
     }
     string feat_name = os.str();
     if (DEBUG_FF_NGRAMS) std::cerr << "Generating feature ID for: " << feat_name << std::endl;
@@ -190,7 +191,7 @@ class NgramDetectorImpl {
   void PrintState(const State<5>& state) const {
     if (DEBUG_FF_NGRAMS) {
       std::cerr << "State =";
-      for (int i = 0; i < 4; i++) {
+      for (int i = 0; i < order_ - 1; i++) {
         if (state[i] >= 0 && state[i] <= TD::NumWords())
           std::cerr << " " << TD::Convert(state[i]);
         else
@@ -204,9 +205,10 @@ class NgramDetectorImpl {
     FidTree* ft = &fidroot_;
     int n = 0;
     WordID buf[10];
-    // read n-gram in reverse order, starting at position order_-1
+    // read n-gram in reverse order, starting at rightmost position
+    // (state has size order-1; rightmost position is order-2)
     // (note: this gets decremented before use)
-    int ci = order_;
+    int ci = order_ - 1;
     WordID curword = cur;
     if (DEBUG_FF_NGRAMS) std::cerr << "Firing features: "; PrintState(state);
 
@@ -266,6 +268,10 @@ class NgramDetectorImpl {
     int num_estimated = 0;
     bool saw_eos = false;
     bool has_some_history = false;
+    if (remnant) {
+      memset(remnant, 0, state_size_);
+      AssertStateSanity(remnant);
+    }
 
     // used to hold the current n-gram to be fired
     State<5> state;
@@ -273,8 +279,8 @@ class NgramDetectorImpl {
     bool context_complete = false;
     if (DEBUG_FF_NGRAMS) std::cerr << "---Lookup words---" << std::endl;
     for (int j = 0; j < e.size(); ++j) {
-
       if (DEBUG_FF_NGRAMS) std::cerr << "State at top of loop: "; PrintState(state);
+      AssertStateSanity(remnant);
 
       if (e[j] < 1) {   // handle non-terminal substitution
         if (DEBUG_FF_NGRAMS) std::cerr << "j=" << j << "; NONT #" << -e[j] << std::endl;
@@ -283,6 +289,7 @@ class NgramDetectorImpl {
         const void* astate = (ant_states[-e[j]]);
         int unscored_ant_len = UnscoredSize(astate);
         for (int k = 0; k < unscored_ant_len; ++k) {
+          AssertStateSanity(remnant);
           // get the ith unscored (on the right side of the antecedent) word
           const WordID cur_word = IthUnscoredWord(k, astate);
           const bool is_oov = (cur_word == 0);
@@ -310,6 +317,7 @@ class NgramDetectorImpl {
             if (saw_eos) { p.set_value(FD::Convert("Malformed"), 1.0); }
             saw_eos = (cur_word == kEOS_);
           }
+          AssertStateSanity(remnant);
           has_some_history = true;
           ++num_scored;
           if (!context_complete) {
@@ -324,6 +332,7 @@ class NgramDetectorImpl {
             if (est_feats)
               (*est_feats) += p;
           }
+          AssertStateSanity(remnant);
         }
         saw_eos = GetFlag(astate, HAS_EOS_ON_RIGHT);
         if (HasFullContext(astate)) { // this is equivalent to the "star" in Chiang 2007
@@ -332,11 +341,14 @@ class NgramDetectorImpl {
           if (DEBUG_FF_NGRAMS) std::cerr << "Set state to antecedant remnant: "; PrintState(state);
           context_complete = true;
         }
+        AssertStateSanity(remnant);
       } else {   // handle terminal
+        AssertStateSanity(remnant);
         if (DEBUG_FF_NGRAMS) std::cerr << "j=" << j << "; TERM" << std::endl;
         const WordID cur_word = e[j];
         SparseVector<double> p;
         if (cur_word == kSOS_) {
+          AssertStateSanity(remnant);
           if (DEBUG_FF_NGRAMS) std::cerr << "Saw SOS" << std::endl;
           state = BeginSentenceState();
           if (has_some_history) {  // this is immediately fully scored, and bad
@@ -348,6 +360,7 @@ class NgramDetectorImpl {
           // TODO: Remove me?
           //FireFeatures(state, cur_word, &p);
         } else {
+          AssertStateSanity(remnant);
           if (DEBUG_FF_NGRAMS) std::cerr << "Not SOS" << std::endl;
           FireFeatures(state, cur_word, &p);
           const State<5> scopy = State<5>(state, order_, cur_word);
@@ -357,6 +370,7 @@ class NgramDetectorImpl {
           if (saw_eos) { p.set_value(FD::Convert("Malformed"), 1.0); }
           saw_eos = (cur_word == kEOS_);
         }
+        AssertStateSanity(remnant);
         has_some_history = true;
         ++num_scored;
         if (!context_complete) {
@@ -366,19 +380,46 @@ class NgramDetectorImpl {
         if (context_complete) {
           (*feats) += p;
         } else {
+          AssertStateSanity(remnant);
           if (remnant)
             SetIthUnscoredWord(num_estimated, cur_word, remnant);
+          AssertStateSanity(remnant);
           ++num_estimated;
           if (est_feats)
             (*est_feats) += p;
         }
+        AssertStateSanity(remnant);
       }
+      AssertStateSanity(remnant);
     }
     if (remnant) {
       SetFlag(saw_eos, HAS_EOS_ON_RIGHT, remnant);
       SetRemnantLMState(state, remnant);
       SetUnscoredSize(num_estimated, remnant);
       SetHasFullContext(context_complete || (num_scored >= order_), remnant);
+    }
+    AssertStateSanity(remnant);
+  }
+
+  inline void AssertStateSanity(const void* remnant) const {
+    if (remnant) {
+      const State<5>& left = RemnantLMState(remnant);
+      if (DEBUG_FF_NGRAMS) {
+        std::cerr << "Left: ";
+        for (int i = 0; i < order_ - 1; ++i)
+          std::cerr << left.state[i] << " ";
+        std::cerr << "; Right: ";
+        for (int i = 0; i < order_ - 1; ++i)
+          std::cerr << IthUnscoredWord(i, remnant) << " ";
+        std::cerr << std::endl;
+      }
+
+      for (int i = 0; i < order_ - 1; ++i) {
+        assert(left.state[i] >= 0);
+        assert(left.state[i] <= TD::NumWords());
+        assert(IthUnscoredWord(i, remnant) >= 0);
+        assert(IthUnscoredWord(i, remnant) <= TD::NumWords());
+      }
     }
   }
 
@@ -417,6 +458,11 @@ class NgramDetectorImpl {
     unscored_size_offset_ = (order_ - 1) * sizeof(WordID);
     is_complete_offset_ = unscored_size_offset_ + 1;
     unscored_words_offset_ = is_complete_offset_ + 1;
+    std::cerr << "Ngram state size is " << state_size_
+              << "; unscored_size_offset_ " << unscored_size_offset_
+              << "; is_complete_offset_ " << is_complete_offset_
+              << "; unscored_words_offset_ " << unscored_words_offset_
+              << std::endl;
 
     // special handling of beginning / ending sentence markers
     dummy_state_ = new char[state_size_];
