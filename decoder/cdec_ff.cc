@@ -18,6 +18,7 @@
 #include "ff_register.h"
 #include "ff_charset.h"
 #include "ff_wordset.h"
+#include "ff_conjunctions.h"
 #include "ff_dwarf.h"
 
 #include "ff_length_hammer.h"
@@ -74,6 +75,7 @@ void register_feature_functions() {
   ff_registry.Register("WordSet", new FFFactory<WordSet>);
   ff_registry.Register("Dwarf", new FFFactory<Dwarf>);
   ff_registry.Register("LengthHammer", new FFFactory<LengthHammer>);
+  ff_registry.Register("ConjoinedWordSet", new FFFactory<ConjoinedWordSet>);
 #ifdef HAVE_GLC
   ff_registry.Register("ContextCRF", new FFFactory<Model1Features>);
 #endif
