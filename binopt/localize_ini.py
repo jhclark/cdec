@@ -33,4 +33,4 @@ for line in sys.stdin:
 # 3) Copy files to local destination
 for (src, dest) in files.iteritems():
     print >>sys.stderr, "Copying {} => {}".format(src, dest)
-    ##shutil.copy(src, dest)
+    shutil.copy(src, dest)
