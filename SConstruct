@@ -32,8 +32,9 @@ env = Environment(ENV = os.environ, # Not very scons-like... just import the who
 #                 LIBDIR = lib,
                   CPPPATH = include,
                   LIBPATH = [],
-                  LIBS = Split('boost_program_options boost_serialization boost_thread z'),
-#                 LINKFLAGS = "--static",
+                  LIBS = Split('boost_program_options boost_serialization boost_thread boost_system boost_timer z'),
+#                  LINKFLAGS = "-pg",
+#		  CCFLAGS=Split('-g -DHAVE_SCONS --static -DJLM_REAL_VALUES -pg'),
 		  CCFLAGS=Split('-g -DHAVE_SCONS --static -DJLM_REAL_VALUES'),
 		  CXXFLAGS=Split('-std=c++11'))
 
