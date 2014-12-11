@@ -48,6 +48,10 @@ void ConjoinedWordSet::TraversalFeaturesImpl(const SentenceMetadata& /*smeta*/ ,
     int alignedCount = 0;
     for(std::vector<AlignmentPoint>::const_iterator it = edge.rule_->a_.begin(); it != edge.rule_->a_.end(); ++it) {
       const AlignmentPoint& a = *it;
+      if (a.s_ >= edge.rule_->f_.size() || a.t_ >= edge.rule_->e_.size()) {
+        std::cerr << "Skipping borken rule " << edge.rule_ << " with borken alignment point " << a << std::endl;
+        continue;
+      }
       WordID f = edge.rule_->f_.at(a.s_);
       WordID e = edge.rule_->e_.at(a.t_);
 
