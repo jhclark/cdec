@@ -22,7 +22,7 @@ namespace {
   }
 
   inline int GetFeatureID(const std::string& prefix, WordID a, WordID b) {
-    std::cerr << a << " " << b << " " << TD::Convert(a) << " " << TD::Convert(b) << std::endl;
+    //std::cerr << a << " " << b << " " << TD::Convert(a) << " " << TD::Convert(b) << std::endl;
     std::ostringstream os;
     const std::string& tokA = TD::Convert(a);
     const std::string& tokB = TD::Convert(b);
