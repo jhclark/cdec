@@ -47,6 +47,7 @@ my $best_weights;
 my $psi = 1;
 my $default_max_iter = 30;
 my $max_iterations = $default_max_iter;
+my $mapper_jobs = -1;
 my $jobs = $default_jobs;   # number of decode nodes
 my $pmem = "4g";
 my $disable_clean = 0;
@@ -100,6 +101,7 @@ my $linf_reg = 0.0;
 Getopt::Long::Configure("no_auto_abbrev");
 if (GetOptions(
 	"jobs=i" => \$jobs,
+	"mapper-jobs=i" => \$mapper_jobs,
 	"dont-clean" => \$disable_clean,
 	"dont-iterative-cleanup" => \$dont_iterative_cleanup,
 	"pass-suffix=s" => \$pass_suffix,
@@ -147,6 +149,10 @@ if (GetOptions(
 
 if($do_binning) {
     die "--uniq_feats_file not specified" unless defined $uniq_feats_file;
+}
+
+if($mapper_jobs == -1) {
+  $mapper_jobs = $jobs;
 }
 
 die "--tune-regularizer is no longer supported with --reg-previous and --reg. Please tune manually.\n" if $tune_regularizer;
@@ -465,7 +471,7 @@ while (1){
 		close $mkfile;
                 print STDERR "Waiting 10 seconds for filesystem to catch up...\n";
                 sleep 10;
-		my $mcmd = "make -j $jobs -f $mkfilename";
+		my $mcmd = "make -j $mapper_jobs -f $mkfilename";
 		print STDERR "\nExecuting: $mcmd\n";
 		check_call($mcmd);
 	} else {
