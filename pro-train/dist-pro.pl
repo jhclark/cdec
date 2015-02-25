@@ -87,6 +87,7 @@ my $dominant_feat = ""; # the name of a single feature that should receive much 
 my $prune_kbest_by_length_hammer = 0; # Remove k-best entries with non-zero length hammer?
 my $regularize_by_group = 0; # evenly distribute basic L2 regularizer C over features instead of applying it individually to each feature?
 my $use_Linf_in_weights = 0;
+my $non_oscar_feats_file = "";
 
 my $kbest_size = 1500;
 
@@ -119,7 +120,8 @@ if (GetOptions(
 	"graph-reg-file=s" => \$graph_reg_file,
         "graph-reg-strength=s" => \$graph_reg_strength,
 	"tangent-reg-file=s" => \$tangent_reg_file,
-	"dominant-feat=s" => \$dominant_feat,
+	"non-oscar-feats-file=s" => \$non_oscar_feats_file,
+        "dominant-feat=s" => \$dominant_feat,
 	"kbest-size=s" => \$kbest_size,
 	"prune-kbest-by-length-hammer" => \$prune_kbest_by_length_hammer,
         "regularize-by-group" => \$regularize_by_group,
@@ -145,7 +147,7 @@ if (GetOptions(
 ) == 0 || @ARGV!=1 || $help) {
 	print_help();
 	die "Invalid options.";
-}
+s}
 
 if($do_binning) {
     die "--uniq_feats_file not specified" unless defined $uniq_feats_file;
@@ -521,6 +523,9 @@ while (1){
         if ($tangent_reg_file) {
             $cmd .= " -L $tangent_reg_file";
         }
+	if ($non_oscar_feats_file) {
+            $cmd .= " --non_oscar_feat_file $non_oscar_feats_file";
+	}
         if ($dominant_feat) {
             $cmd .= " --dominant_feat $dominant_feat";
         }
