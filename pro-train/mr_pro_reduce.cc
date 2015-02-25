@@ -50,6 +50,7 @@ void InitCommandLine(int argc, char** argv, po::variables_map* conf) {
         ("graph_regularization_file,g",po::value<string>(), "file to read graph regularization precision matrix from (format: 'feat1_name feat2_name weight' -- weighted by G, not C; this line means 'feat1 is penalized for being dissimilar from feat2 proportional to weight')")
         ("tangent_regularization_file,L",po::value<string>(), "file to read tangent regularization configuration from (format: 'reg_strength window_size feat1_name feat2_name [feat3_name...]' -- weights are per line, not cumulative with C; this line means 'feat1...featN participate in a preferably smooth line (the line implied by the features' weights). window_size features on either side of each segment of this line will be used for approximating a tangent line and each line segment will receive a penalty with strength reg_strength for being dissimilar to that slope)")
         ("oscar_feats_file,O",po::value<string>(), "file to read OSCAR features from. If specified, only feature names listed in this file will have the OSCAR L1 and L_inf regularization terms applied to them.")
+        ("non_oscar_feats_file",po::value<string>(), "file to read non-OSCAR features from. If specified, none of the feature names listed in this file will have the OSCAR L1 and L_inf regularization terms applied to them.")
         ("regularize_by_group,x",po::bool_switch()->default_value(false), "For feature groups (lines) defined in the tangent_regularization_file, apply the regularizer to the average weight over all bins.")
         ("regularization_file,F",po::value<string>(), "a file containing per-feature regularization weights (additive with normal L2 regularizer, but not weighted by C)")
         ("regularize_to_weights,y",po::value<double>()->default_value(5000.0), "Differences in learned weights to previous weights are penalized with an l2 penalty with this strength; 0.0 = no effect")
@@ -515,6 +516,8 @@ void ReadFeatMatrix(const string& filename,
 
 // reads a file that lists features that should be included in OSCAR regularization
 void ReadOscarFeaturesFile(const string& filename,
+			   const bool init_all,
+                           const bool value_to_store, // true for OSCAR feats, false for non-OSCAR feats
                            vector<bool>* oscar_feats) {
 
   if (!SILENT) cerr << "Reading OSCAR features from " << filename << endl;
@@ -524,8 +527,10 @@ void ReadOscarFeaturesFile(const string& filename,
 
   // start by applying OSCAR to no features
   // then set to true as we observe them in the file
-  for (size_t i = 0; i < oscar_feats->size(); ++i) {
-    (*oscar_feats)[i] = false;
+  if (init_all) {
+    for (size_t i = 0; i < oscar_feats->size(); ++i) {
+      (*oscar_feats)[i] = !value_to_store;
+    }
   }
 
   int count = 0;
@@ -548,7 +553,7 @@ void ReadOscarFeaturesFile(const string& filename,
     if (oscar_feats->size() <= fid) {
       oscar_feats->resize(fid+1);
     }
-    (*oscar_feats)[fid] = true;
+    (*oscar_feats)[fid] = value_to_store;
     ++count;
   }
   cerr << "Read " << count << " OSCAR features" << endl;
@@ -773,8 +778,13 @@ int main(int argc, char** argv) {
   vector<bool> oscar_feats(FD::NumFeats(), true);
   if (conf.count("oscar_feats_file")) {
     string oscar_features_file = conf["oscar_feats_file"].as<string>();
-    ReadOscarFeaturesFile(oscar_features_file, &oscar_feats);
+    ReadOscarFeaturesFile(oscar_features_file, true, true, &oscar_feats);
   }
+  if (conf.count("non_oscar_feats_file")) {
+    string non_oscar_features_file = conf["non_oscar_feats_file"].as<string>();
+    ReadOscarFeaturesFile(non_oscar_features_file, false, false, &oscar_feats);
+  }
+
 
   double init_learning_rate = conf["init_learning_rate"].as<double>();
   double nonadapted_learning_rate = conf["nonadapted_learning_rate"].as<double>();
