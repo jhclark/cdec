@@ -147,7 +147,7 @@ if (GetOptions(
 ) == 0 || @ARGV!=1 || $help) {
 	print_help();
 	die "Invalid options.";
-s}
+}
 
 if($do_binning) {
     die "--uniq_feats_file not specified" unless defined $uniq_feats_file;
