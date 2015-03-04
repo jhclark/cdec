@@ -524,7 +524,7 @@ while (1){
             $cmd .= " -L $tangent_reg_file";
         }
 	if ($non_oscar_feats_file) {
-            $cmd .= " --non_oscar_feat_file $non_oscar_feats_file";
+            $cmd .= " --non_oscar_feats_file $non_oscar_feats_file";
 	}
         if ($dominant_feat) {
             $cmd .= " --dominant_feat $dominant_feat";
