@@ -2,6 +2,7 @@
 #define _FF_CONJUNCTIONS_H_
 
 #include "ff.h"
+#include "classmapper.h"
 
 #include <tr1/unordered_set>
 #include <boost/algorithm/string.hpp>
@@ -17,12 +18,19 @@ class ConjoinedWordSet : public FeatureFunction {
 // to call member constructurs in the proper order
 // modify this carefully!
 //
-// Usage: "ConjoinedWordSet -N name -s src_vocab.txt -t tgt_vocab.txt [--aligned] [--abs|--positive|--negative] [--invert_src] [--invert_tgt]"
- ConjoinedWordSet(const std::string& param) {
+// Usage: "ConjoinedWordSet -N name -s src_vocab.txt -t tgt_vocab.txt -m class_map.txt [--aligned] [--abs|--positive|--negative] [--invert_src] [--invert_tgt]"
+ ConjoinedWordSet(const std::string& param)
+  {
     std::string srcVocabFile;
     std::string tgtVocabFile;
     std::string featName;
-    parseArgs(param, &featName, &alignedOnly_, &absValue_, &positive_, &negative_, &lexicalized_, &srcVocabFile, &tgtVocabFile, &invertSrc_, &invertTgt_);
+    std::string mapFileF;
+    std::string mapFileE;
+    emit_lex_ = true;
+    parseArgs(param, &featName, &mapFileF, &mapFileE, &alignedOnly_, &absValue_, &positive_, &negative_, &lexicalized_, &srcVocabFile, &tgtVocabFile, &invertSrc_, &invertTgt_);
+
+    emit_classes_ = (mapFileF != "") && (mapFileE != "");
+    emit_mixed_ = emit_classes_;
 
     featName_ = featName;
     fid_ = FD::Convert(featName);
@@ -31,23 +39,44 @@ class ConjoinedWordSet : public FeatureFunction {
     alignedName << featName << "Aligned";
     alignedName_ = alignedName.str();
 
+    std::ostringstream alignedClassName;
+    alignedClassName << featName << "AlignedClass";
+    alignedClassName_ = alignedClassName.str();
+    
+    std::ostringstream alignedMixedName;
+    alignedMixedName << featName << "AlignedMixed";
+    alignedMixedName_ = alignedMixedName.str();
+
     std::ostringstream acrossName;
     acrossName << featName << "AcrossPhrase";
     acrossName_ = acrossName.str();
 
-    if (srcVocabFile == "NULL" || srcVocabFile == "null") {
+    std::ostringstream acrossClassName;
+    acrossClassName << featName << "AcrossClass";
+    acrossClassName_ = acrossClassName.str();
+    
+    std::ostringstream acrossMixedName;
+    acrossMixedName << featName << "AcrossMixed";
+    acrossMixedName_ = acrossMixedName.str();
+
+    if (srcVocabFile == "NULL" || srcVocabFile == "null" || srcVocabFile == "") {
       std::cerr << "Using NULL vocab for src vocab of " << featName << std::endl;
     } else {
       std::cerr << "Loading src vocab for " << param << " from " << srcVocabFile << " for " << featName << std::endl;
       loadVocab(srcVocabFile, &srcVocab_);
     }
 
-    if (tgtVocabFile == "NULL" || tgtVocabFile == "null") {
+    if (tgtVocabFile == "NULL" || tgtVocabFile == "null" || tgtVocabFile == "") {
       std::cerr << "Using NULL vocab for tgt vocab of " << featName << std::endl;
     } else {
       std::cerr << "Loading tgt vocab for " << param << " from " << tgtVocabFile << " for " << featName << std::endl;
       loadVocab(tgtVocabFile, &tgtVocab_);
     }
+
+    if (mapFileF != "")
+      class_map_f_.LoadWordClasses(mapFileF);
+    if (mapFileE != "")
+      class_map_e_.LoadWordClasses(mapFileE);
   }
 
   ~ConjoinedWordSet() {
@@ -90,7 +119,7 @@ class ConjoinedWordSet : public FeatureFunction {
       }
   }
 
-  static void parseArgs(const std::string& args, std::string* featName,
+  static void parseArgs(const std::string& args, std::string* featName, std::string* mapFileF, std::string* mapFileE,
 			bool* alignedOnly, bool* absValue, bool* positive, bool* negative, bool* lexicalized,
 			std::string* srcVocabFile, std::string* tgtVocabFile,
                         bool* invertSrc, bool* invertTgt) {
@@ -116,6 +145,12 @@ class ConjoinedWordSet : public FeatureFunction {
 
       } else if(*it == "-N") {
 	*featName = *++it;
+
+      } else if(*it == "-mf") {
+	*mapFileF = *++it;
+
+      } else if(*it == "-me") {
+	*mapFileE = *++it;
 
       } else if(*it == "--lexicalized") {
 	*lexicalized = true;
@@ -148,6 +183,7 @@ class ConjoinedWordSet : public FeatureFunction {
       std::cerr << "featName (-N) not specified for ConjoinedWordSet" << std::endl;
       exit(1);
     }
+/*
     if(*srcVocabFile == "") {
       std::cerr << "srcVocabFile (-s) not specified for ConjoinedWordSet" << std::endl;
       exit(1);
@@ -156,9 +192,10 @@ class ConjoinedWordSet : public FeatureFunction {
       std::cerr << "tgtVocabFile (-t) not specified for ConjoinedWordSet" << std::endl;
       exit(1);
     }
+*/
     // TODO: validate boolean options
   }
-
+  
   std::string featName_;
   int fid_;
   bool alignedOnly_;
@@ -170,9 +207,20 @@ class ConjoinedWordSet : public FeatureFunction {
   bool invertTgt_;
   std::tr1::unordered_set<WordID> srcVocab_;
   std::tr1::unordered_set<WordID> tgtVocab_;
-
+  
   std::string alignedName_;
   std::string acrossName_;
+
+  // class-based stuff
+  bool emit_classes_;
+  bool emit_lex_;
+  bool emit_mixed_;
+  ClassMapper class_map_f_;
+  ClassMapper class_map_e_;
+  std::string alignedClassName_;
+  std::string alignedMixedName_;
+  std::string acrossClassName_;
+  std::string acrossMixedName_;
 };
 
 #endif

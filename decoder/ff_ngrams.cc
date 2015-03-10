@@ -11,6 +11,7 @@
 #include "hg.h"
 #include "tdict.h"
 #include "sentence_metadata.h"
+#include "classmapper.h"
 
 using namespace std;
 
@@ -73,7 +74,7 @@ namespace {
 // -o : What order ngrams should be emitted?
 // -F : ngram file, with list of ngrams that should be included
 // NOTE : observable features must be annotated on source sentence using SGML will be conjoined
-static bool ParseArgs(string const& in, bool* explicit_markers, unsigned* order, string* ngram_file) {
+static bool ParseArgs(string const& in, bool* explicit_markers, unsigned* order, string* ngram_file, string* map_file) {
   vector<string> const& argv=SplitOnWhitespace(in);
   *explicit_markers = false;
   *order = 3;
@@ -95,6 +96,9 @@ static bool ParseArgs(string const& in, bool* explicit_markers, unsigned* order,
         break;
       case 'F':
         LMSPEC_NEXTARG; *ngram_file=*i;
+        break;
+      case 'm':
+        LMSPEC_NEXTARG; *map_file=*i;
         break;
 #undef LMSPEC_NEXTARG
       default:
@@ -173,12 +177,12 @@ class NgramDetectorImpl {
     SetFlag(flag, HAS_FULL_CONTEXT, state);
   }
 
-  inline int GetFeatureID(WordID* buf, int n) const {
-    const char* code="_UBT456789"; // prefix code (unigram, bigram, etc.)
+  inline int GetFeatureID(const std::vector<WordID>& buf) const {
+    const char* code="UBT456789"; // prefix code (unigram, bigram, etc.)
     ostringstream os;
-    os << code[n] << ':';
-    for (int i = n-1; i >= 0; --i) {
-      os << (i != n-1 ? "_" : "");
+    os << code[buf.size()-1] << ':';
+    for (int i = buf.size()-1; i >= 0; --i) {
+      os << (i != buf.size()-1 ? "_" : "");
       const string& tok = TD::Convert(buf[i]);
       os << Escape(tok);
     }
@@ -202,9 +206,19 @@ class NgramDetectorImpl {
   }
 
   void FireFeatures(const State<5>& state, WordID cur, SparseVector<double>* feats) {
-    FidTree* ft = &fidroot_;
-    int n = 0;
-    WordID buf[10];
+    std::vector<FidTree*> fidTreePtrs;
+    fidTreePtrs.reserve(32); // 2^5 = 32 (either class or lexical form at each of 5 positions)
+    fidTreePtrs.push_back(&fidroot_);
+
+    // temporary holding buffer updated in the loop and repeatedly reassigned to fidTreePtrs
+    std::vector<FidTree*> nextFidTreePtrs;
+    nextFidTreePtrs.reserve(32); // 2^5 = 32 (either class or lexical form at each of 5 positions)
+
+    std::vector< std::vector<WordID> > bufs;
+    bufs.reserve(32);
+    bufs.resize(1);
+    std::vector< std::vector<WordID> > next_bufs;
+    bufs.reserve(32);
     // read n-gram in reverse order, starting at rightmost position
     // (state has size order-1; rightmost position is order-2)
     // (note: this gets decremented before use)
@@ -219,30 +233,64 @@ class NgramDetectorImpl {
     //   (with the most recent word nearest the root of the trie)
     // the "buf" array gets populated from left to right, with the n-gram in reverse order
     //   buf only gets used if we haven't cached a stringified feature name for this n-gram yet
-    while(curword) {
-      buf[n] = curword;
-      if (DEBUG_FF_NGRAMS) std::cerr << "Firing features. Curword = " << TD::Convert(curword) << std::endl;
-      int& fid = ft->fids[curword];
-      ++n;
-      if (!fid) {
-        fid = GetFeatureID(buf, n);
-      }
-      ft = &ft->levels[curword];
-      --ci;
-      if (ci < 0) break;
-      curword = state[ci];
+    for (int ord = 0; curword && ord < order_; ++ord) {
+   
+      // iterate over permutations between clusters and lexical n-grams
+      // if not using clusters, this loop will always have one iteration 
+      assert(fidTreePtrs.size() == bufs.size());
+      for (size_t k = 0; k < fidTreePtrs.size(); ++k) {
+        FidTree* ft = fidTreePtrs[k];
+        std::vector<WordID> buf = bufs[k];
 
-      if(allowed_feats_.empty() || allowed_feats_.find(fid) != allowed_feats_.end()) {
-        feats->set_value(fid, 1);
-        for(int i=0; i<obs_feats_.size(); ++i) {
-          int obs_fid = obs_feats_.at(i);
-          int& conj_fid = conj_cache_[pair<int,int>(fid, obs_fid)];
-          if(!conj_fid) {
-            string conj_feat = FD::Convert(obs_fid) + "_" + FD::Convert(fid);
-            conj_fid = FD::Convert(conj_feat);
+        std::vector<WordID> wordIds;
+        wordIds.push_back(curword);
+        if (DEBUG_FF_NGRAMS) std::cerr << "Adding word at treelevel " << ci << ": " << TD::Convert(curword) << std::endl;
+	if (!class_map_.Empty()) {
+          WordID cls = class_map_.ClassifyWord(curword);
+          if (cls >= 0) {
+            wordIds.push_back(cls);
+	    if (DEBUG_FF_NGRAMS) std::cerr << "Adding class at treelevel " << ci << ": " << TD::Convert(cls) << std::endl;
           }
-          feats->set_value(conj_fid, 1);
         }
+
+        // iterate over the different tokens that could take this position
+        // e.g. class or word
+        buf.resize(buf.size() + 1);
+        for (WordID wordId : wordIds) {
+          buf.back() = wordId;
+          next_bufs.push_back(buf);
+
+	  if (DEBUG_FF_NGRAMS) std::cerr << "Firing features. Curword = " << TD::Convert(wordId) << std::endl;
+	  int& fid = ft->fids[wordId];
+	  if (!fid || DEBUG_FF_NGRAMS)
+	    fid = GetFeatureID(buf);
+	  FidTree* next_ft = &ft->levels[wordId];
+	  nextFidTreePtrs.push_back(next_ft);
+
+	  if (allowed_feats_.empty() || allowed_feats_.find(fid) != allowed_feats_.end()) {
+	    feats->set_value(fid, 1);
+	    for (int i=0; i<obs_feats_.size(); ++i) {
+	      int obs_fid = obs_feats_.at(i);
+	      int& conj_fid = conj_cache_[pair<int,int>(fid, obs_fid)];
+	      if (!conj_fid) {
+		string conj_feat = FD::Convert(obs_fid) + "_" + FD::Convert(fid);
+		conj_fid = FD::Convert(conj_feat);
+	      }
+	      feats->set_value(conj_fid, 2);
+	    }
+	  }
+	}
+      }
+      --ci;
+      curword = state[ci];
+      
+      // TODO: Optimize performance by avoiding this copy by value
+      // and instead use two alternating buffers?
+      if (ord < order_ - 1) {
+	fidTreePtrs = nextFidTreePtrs; // copy by value
+	bufs = next_bufs;
+	nextFidTreePtrs.clear();
+	next_bufs.clear();
       }
     }
   }
@@ -450,7 +498,7 @@ class NgramDetectorImpl {
   }
 
  public:
-  explicit NgramDetectorImpl(bool explicit_markers, unsigned order, const string& ngram_file) :
+  explicit NgramDetectorImpl(bool explicit_markers, unsigned order, const string& ngram_file, const string& map_file) :
       kCDEC_UNK(TD::Convert("<unk>")) ,
       add_sos_eos_(!explicit_markers) {
     order_ = order;
@@ -483,17 +531,21 @@ class NgramDetectorImpl {
         if (!line.empty()) {
           vector<string> toks;
           Tokenize(line, ' ', &toks);
-          int buf[10];
+          std::vector<WordID> buf;
+          buf.resize(toks.size());
           for(int i=0; i<toks.size(); ++i) {
             buf[toks.size()-i-1] = TD::Convert(toks.at(i));
           }
-          int fid = GetFeatureID(buf, toks.size());
+          int fid = GetFeatureID(buf);
           if (DEBUG_FF_NGRAMS) cerr << "Allowed " << FD::Convert(fid) << endl;
           allowed_feats_.insert(fid);
         }
       }
       cerr << "NgramDetector found " << allowed_feats_.size() << " allowable n-gram features" << endl;
     }
+
+    if (!map_file.empty())
+      class_map_.LoadWordClasses(map_file);
   }
 
   ~NgramDetectorImpl() {
@@ -529,6 +581,8 @@ class NgramDetectorImpl {
   vector<int> obs_feats_;
   set<int> allowed_feats_; // in case we want to take the top N ngrams, etc.
   map<pair<int, int> , int> conj_cache_;
+
+  ClassMapper class_map_;
 };
 
 NgramDetector::NgramDetector(const string& param) {
@@ -536,8 +590,9 @@ NgramDetector::NgramDetector(const string& param) {
   bool explicit_markers = false;
   unsigned order = 3;
   string ngram_file;
-  ParseArgs(param, &explicit_markers, &order, &ngram_file);
-  pimpl_ = new NgramDetectorImpl(explicit_markers, order, ngram_file);
+  string map_file;
+  ParseArgs(param, &explicit_markers, &order, &ngram_file, &map_file);
+  pimpl_ = new NgramDetectorImpl(explicit_markers, order, ngram_file, map_file);
   SetStateSize(pimpl_->ReserveStateSize());
 }
 
